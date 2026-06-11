@@ -13,46 +13,84 @@
         <p>Kunqu Sleeve Study Board</p>
         <h1>昆曲水袖动作拆解板</h1>
       </div>
-      <button id="newActionBtn" type="button">新建动作</button>
+      <div class="head-btns">
+        <button id="newActionBtn" type="button">新建动作</button>
+        <button id="openSessionsBtn" type="button" class="btn-secondary">练习课次</button>
+      </div>
     </header>
 
     <section class="grid">
       <aside class="sidebar">
-        <form id="actionForm">
-          <h2>动作条目</h2>
-          <label>动作名称<input name="name" required placeholder="如：抛袖接转身"></label>
-          <label>标签<input name="tags" placeholder="圆场,亮相,慢板"></label>
-          <label>练习视频或照片<input id="mediaInput" type="file" accept="image/*,video/*"></label>
-          <button type="submit">保存动作</button>
-        </form>
-        <label class="filter">标签筛选<input id="tagFilter" placeholder="输入标签"></label>
-        <div id="actionList" class="action-list"></div>
+        <div class="tabs" id="sidebarTabs">
+          <button class="tab active" type="button" data-tab="actions">动作库</button>
+          <button class="tab" type="button" data-tab="sessions">课次记录</button>
+        </div>
+
+        <div class="tab-panel active" id="panel-actions">
+          <form id="actionForm">
+            <h2>动作条目</h2>
+            <label>动作名称<input name="name" required placeholder="如：抛袖接转身"></label>
+            <label>标签<input name="tags" placeholder="圆场,亮相,慢板"></label>
+            <label>练习视频或照片<input id="mediaInput" type="file" accept="image/*,video/*"></label>
+            <button type="submit">保存动作</button>
+          </form>
+          <label class="filter">标签筛选<input id="tagFilter" placeholder="输入标签"></label>
+          <div id="actionList" class="action-list"></div>
+        </div>
+
+        <div class="tab-panel" id="panel-sessions">
+          <div class="sessions-header">
+            <h2>课次记录</h2>
+            <button id="newSessionBtn" type="button" class="btn-small">+ 新建课次</button>
+          </div>
+          <div id="sessionsList" class="sessions-list"></div>
+        </div>
       </aside>
 
       <section class="main">
-        <div class="media-box" id="mediaBox"></div>
-        <form id="frameForm" class="frame-form">
-          <h2>关键帧</h2>
-          <div class="row">
-            <label>节点
-              <select name="stage">
-                <option>起势</option>
-                <option>抛袖</option>
-                <option>收袖</option>
-                <option>转身</option>
-                <option>亮相</option>
-              </select>
-            </label>
-            <label>时间点<input name="time" placeholder="00:08"></label>
+        <div class="main-tabs" id="mainTabs">
+          <button class="m-tab active" type="button" data-mtab="detail">动作详情</button>
+          <button class="m-tab" type="button" data-mtab="practice">练习面板</button>
+        </div>
+
+        <div class="m-tab-panel active" id="mtab-detail">
+          <div class="media-box" id="mediaBox"></div>
+          <form id="frameForm" class="frame-form">
+            <h2>关键帧</h2>
+            <div class="row">
+              <label>节点
+                <select name="stage">
+                  <option>起势</option>
+                  <option>抛袖</option>
+                  <option>收袖</option>
+                  <option>转身</option>
+                  <option>亮相</option>
+                </select>
+              </label>
+              <label>时间点<input name="time" placeholder="00:08"></label>
+            </div>
+            <div class="row">
+              <label>身体重心<input name="weight" placeholder="偏左、下沉、上提"></label>
+              <label>手腕方向<input name="wrist" placeholder="内旋、外翻、平送"></label>
+            </div>
+            <label>节奏备注<input name="tempo" placeholder="慢起快收，落点在板后"></label>
+            <label>复盘批注<textarea name="note" rows="3"></textarea></label>
+            <button type="submit">加入关键帧</button>
+          </form>
+
+          <div class="history-section">
+            <h2>关联历史课次</h2>
+            <div id="actionHistoryList" class="history-list"></div>
           </div>
-          <div class="row">
-            <label>身体重心<input name="weight" placeholder="偏左、下沉、上提"></label>
-            <label>手腕方向<input name="wrist" placeholder="内旋、外翻、平送"></label>
+        </div>
+
+        <div class="m-tab-panel" id="mtab-practice">
+          <div id="practicePanel" class="practice-panel">
+            <div class="practice-empty">
+              <p>选择一个课次进入练习，或从左侧课次记录新建课次</p>
+            </div>
           </div>
-          <label>节奏备注<input name="tempo" placeholder="慢起快收，落点在板后"></label>
-          <label>复盘批注<textarea name="note" rows="3"></textarea></label>
-          <button type="submit">加入关键帧</button>
-        </form>
+        </div>
       </section>
 
       <aside class="review">
@@ -62,6 +100,48 @@
         <div id="mirrorPane" class="mirror"></div>
       </aside>
     </section>
+
+    <div class="modal-mask" id="sessionModal" hidden>
+      <div class="modal">
+        <header class="modal-head">
+          <h3>新建练习课次</h3>
+          <button class="modal-close" type="button" data-close-modal>×</button>
+        </header>
+        <div class="modal-body">
+          <form id="sessionForm">
+            <label>选择动作
+              <select name="actionId" id="sessionActionSelect" required>
+                <option value="">请选择动作</option>
+              </select>
+            </label>
+            <div class="row">
+              <label>节拍速度 (BPM)
+                <input name="tempo" type="number" min="40" max="200" value="80" placeholder="80">
+              </label>
+              <label>预设节拍
+                <select name="tempoPreset" id="tempoPresetSelect">
+                  <option value="">自定义</option>
+                  <option value="60">慢板 (60)</option>
+                  <option value="80">中板 (80)</option>
+                  <option value="100">快板 (100)</option>
+                  <option value="120">急板 (120)</option>
+                </select>
+              </label>
+            </div>
+            <div class="frames-picker">
+              <h4>选择关键帧（多选）</h4>
+              <div id="framePickerList" class="frame-picker-list">
+                <p class="muted">请先选择一个动作</p>
+              </div>
+            </div>
+            <div class="modal-actions">
+              <button type="button" class="btn-secondary" data-close-modal>取消</button>
+              <button type="submit">创建并开始练习</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
   </main>
   <script src="./app.js"></script>
 </body>
