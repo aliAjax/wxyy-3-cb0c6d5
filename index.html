@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>昆曲水袖动作拆解板</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="head">
+      <div>
+        <p>Kunqu Sleeve Study Board</p>
+        <h1>昆曲水袖动作拆解板</h1>
+      </div>
+      <button id="newActionBtn" type="button">新建动作</button>
+    </header>
+
+    <section class="grid">
+      <aside class="sidebar">
+        <form id="actionForm">
+          <h2>动作条目</h2>
+          <label>动作名称<input name="name" required placeholder="如：抛袖接转身"></label>
+          <label>标签<input name="tags" placeholder="圆场,亮相,慢板"></label>
+          <label>练习视频或照片<input id="mediaInput" type="file" accept="image/*,video/*"></label>
+          <button type="submit">保存动作</button>
+        </form>
+        <label class="filter">标签筛选<input id="tagFilter" placeholder="输入标签"></label>
+        <div id="actionList" class="action-list"></div>
+      </aside>
+
+      <section class="main">
+        <div class="media-box" id="mediaBox"></div>
+        <form id="frameForm" class="frame-form">
+          <h2>关键帧</h2>
+          <div class="row">
+            <label>节点
+              <select name="stage">
+                <option>起势</option>
+                <option>抛袖</option>
+                <option>收袖</option>
+                <option>转身</option>
+                <option>亮相</option>
+              </select>
+            </label>
+            <label>时间点<input name="time" placeholder="00:08"></label>
+          </div>
+          <div class="row">
+            <label>身体重心<input name="weight" placeholder="偏左、下沉、上提"></label>
+            <label>手腕方向<input name="wrist" placeholder="内旋、外翻、平送"></label>
+          </div>
+          <label>节奏备注<input name="tempo" placeholder="慢起快收，落点在板后"></label>
+          <label>复盘批注<textarea name="note" rows="3"></textarea></label>
+          <button type="submit">加入关键帧</button>
+        </form>
+      </section>
+
+      <aside class="review">
+        <h2>分镜时间线</h2>
+        <div id="timeline" class="timeline"></div>
+        <h2>左右手对照</h2>
+        <div id="mirrorPane" class="mirror"></div>
+      </aside>
+    </section>
+  </main>
+  <script src="./app.js"></script>
+</body>
+</html>
