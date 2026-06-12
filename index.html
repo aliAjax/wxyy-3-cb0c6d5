@@ -54,7 +54,17 @@
         </div>
 
         <div class="m-tab-panel active" id="mtab-detail">
-          <div class="media-box" id="mediaBox"></div>
+          <div class="media-wrapper" id="mediaWrapper">
+            <div class="annotation-toolbar">
+              <span class="toolbar-title">媒体批注</span>
+              <button type="button" id="addAnnotationBtn" class="btn-small btn-accent">+ 添加批注</button>
+              <button type="button" id="toggleAnnotationsBtn" class="btn-small btn-secondary">显示/隐藏</button>
+              <span class="toolbar-count" id="annotationCount">0 个批注</span>
+            </div>
+            <div class="media-box" id="mediaBox">
+              <div class="annotation-layer" id="annotationLayer"></div>
+            </div>
+          </div>
           <form id="frameForm" class="frame-form">
             <h2>关键帧</h2>
             <div class="row">
@@ -137,6 +147,63 @@
             <div class="modal-actions">
               <button type="button" class="btn-secondary" data-close-modal>取消</button>
               <button type="submit">创建并开始练习</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-mask" id="annotationModal" hidden>
+      <div class="modal">
+        <header class="modal-head">
+          <h3 id="annotationModalTitle">编辑批注</h3>
+          <button class="modal-close" type="button" data-close-annotation>×</button>
+        </header>
+        <div class="modal-body">
+          <form id="annotationForm">
+            <div class="row">
+              <label>身体部位
+                <select name="bodyPart" id="bodyPartSelect">
+                  <option value="左手">左手</option>
+                  <option value="右手">右手</option>
+                  <option value="头部">头部</option>
+                  <option value="肩部">肩部</option>
+                  <option value="腰部">腰部</option>
+                  <option value="左腿">左腿</option>
+                  <option value="右腿">右腿</option>
+                  <option value="水袖">水袖</option>
+                  <option value="其他">其他</option>
+                </select>
+              </label>
+              <label>方向提示
+                <select name="direction" id="directionSelect">
+                  <option value="">无</option>
+                  <option value="上提">上提</option>
+                  <option value="下压">下压</option>
+                  <option value="内旋">内旋</option>
+                  <option value="外翻">外翻</option>
+                  <option value="平送">平送</option>
+                  <option value="左移">左移</option>
+                  <option value="右移">右移</option>
+                  <option value="向前">向前</option>
+                  <option value="向后">向后</option>
+                  <option value="顺时针">顺时针</option>
+                  <option value="逆时针">逆时针</option>
+                </select>
+              </label>
+            </div>
+            <label>文字说明
+              <textarea name="note" id="annotationNote" rows="3" placeholder="描述这个位置的动作要点..."></textarea>
+            </label>
+            <div class="annotation-video-info" id="annotationVideoInfo" hidden>
+              <label>视频时间点
+                <input type="text" id="annotationTimestamp" readonly>
+              </label>
+            </div>
+            <div class="modal-actions">
+              <button type="button" class="btn-danger" id="deleteAnnotationBtn" hidden>删除批注</button>
+              <button type="button" class="btn-secondary" data-close-annotation>取消</button>
+              <button type="submit">保存</button>
             </div>
           </form>
         </div>

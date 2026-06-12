@@ -19,12 +19,30 @@ const framePickerList = document.querySelector("#framePickerList");
 const tempoPresetSelect = document.querySelector("#tempoPresetSelect");
 const sidebarTabs = document.querySelector("#sidebarTabs");
 const mainTabs = document.querySelector("#mainTabs");
+const annotationLayer = document.querySelector("#annotationLayer");
+const annotationCount = document.querySelector("#annotationCount");
+const addAnnotationBtn = document.querySelector("#addAnnotationBtn");
+const toggleAnnotationsBtn = document.querySelector("#toggleAnnotationsBtn");
+const annotationModal = document.querySelector("#annotationModal");
+const annotationForm = document.querySelector("#annotationForm");
+const annotationModalTitle = document.querySelector("#annotationModalTitle");
+const bodyPartSelect = document.querySelector("#bodyPartSelect");
+const directionSelect = document.querySelector("#directionSelect");
+const annotationNote = document.querySelector("#annotationNote");
+const annotationVideoInfo = document.querySelector("#annotationVideoInfo");
+const annotationTimestamp = document.querySelector("#annotationTimestamp");
+const deleteAnnotationBtn = document.querySelector("#deleteAnnotationBtn");
 
 let pendingMedia = null;
 let timerInterval = null;
 let metronomeAudio = null;
 let metronomeInterval = null;
 let metronomePlaying = false;
+let annotationCreatingMode = false;
+let annotationsHidden = false;
+let editingAnnotationId = null;
+let draggingAnnotationId = null;
+let dragOffset = { x: 0, y: 0 };
 
 function save() {
   localStorage.setItem(storageKey, JSON.stringify(state));
@@ -36,6 +54,278 @@ function activeAction() {
 
 function activeSession() {
   return state.sessions.find((s) => s.id === state.activeSessionId) || null;
+}
+
+function ensureActionAnnotations(action) {
+  if (!action) return null;
+  if (!Array.isArray(action.annotations)) {
+    action.annotations = [];
+  }
+  return action;
+}
+
+function getAnnotations() {
+  const action = activeAction();
+  if (!action) return [];
+  ensureActionAnnotations(action);
+  return action.annotations;
+}
+
+function getCurrentMediaElement() {
+  return mediaBox.querySelector("img, video");
+}
+
+function isVideoMedia() {
+  const action = activeAction();
+  return action?.media?.type?.startsWith("video/") || false;
+}
+
+function getCurrentVideoTime() {
+  const video = mediaBox.querySelector("video");
+  if (!video) return null;
+  return video.currentTime;
+}
+
+function openAnnotationModal(annotation = null) {
+  editingAnnotationId = annotation ? annotation.id : null;
+  annotationModalTitle.textContent = annotation ? "编辑批注" : "新建批注";
+  deleteAnnotationBtn.hidden = !annotation;
+
+  if (annotation) {
+    bodyPartSelect.value = annotation.bodyPart || "左手";
+    directionSelect.value = annotation.direction || "";
+    annotationNote.value = annotation.note || "";
+  } else {
+    bodyPartSelect.value = "左手";
+    directionSelect.value = "";
+    annotationNote.value = "";
+  }
+
+  const isVideo = isVideoMedia();
+  annotationVideoInfo.hidden = !isVideo;
+  if (isVideo) {
+    const time = annotation?.timestamp != null ? annotation.timestamp : getCurrentVideoTime();
+    annotationTimestamp.value = time != null ? formatDuration(time) : "--:--";
+  }
+
+  annotationModal.hidden = false;
+  setTimeout(() => annotationNote.focus(), 50);
+}
+
+function closeAnnotationModal() {
+  annotationModal.hidden = true;
+  editingAnnotationId = null;
+  annotationForm.reset();
+}
+
+function createAnnotation(x, y) {
+  const action = activeAction();
+  if (!action) return;
+  ensureActionAnnotations(action);
+
+  const isVideo = isVideoMedia();
+  const annotation = {
+    id: crypto.randomUUID(),
+    x: Math.max(0, Math.min(100, x)),
+    y: Math.max(0, Math.min(100, y)),
+    bodyPart: "左手",
+    direction: "",
+    note: "",
+    timestamp: isVideo ? getCurrentVideoTime() : null,
+    createdAt: new Date().toISOString()
+  };
+
+  action.annotations.push(annotation);
+  save();
+  openAnnotationModal(annotation);
+  renderAnnotations();
+}
+
+function updateAnnotationFromForm() {
+  const action = activeAction();
+  if (!action) return;
+  ensureActionAnnotations(action);
+
+  const data = {
+    bodyPart: bodyPartSelect.value,
+    direction: directionSelect.value,
+    note: annotationNote.value.trim()
+  };
+
+  if (editingAnnotationId) {
+    const ann = action.annotations.find((a) => a.id === editingAnnotationId);
+    if (ann) {
+      Object.assign(ann, data);
+    }
+  }
+  save();
+  closeAnnotationModal();
+  renderAnnotations();
+}
+
+function deleteAnnotation() {
+  if (!editingAnnotationId) return;
+  if (!confirm("确定删除该批注？")) return;
+  const action = activeAction();
+  if (!action) return;
+  ensureActionAnnotations(action);
+  action.annotations = action.annotations.filter((a) => a.id !== editingAnnotationId);
+  save();
+  closeAnnotationModal();
+  renderAnnotations();
+}
+
+function startDrag(e, annotationId) {
+  e.preventDefault();
+  e.stopPropagation();
+  draggingAnnotationId = annotationId;
+  const point = annotationLayer.querySelector(`[data-annotation-id="${annotationId}"]`);
+  if (point) point.classList.add("dragging");
+
+  const rect = annotationLayer.getBoundingClientRect();
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  dragOffset.x = clientX - rect.left;
+  dragOffset.y = clientY - rect.top;
+
+  document.addEventListener("mousemove", onDrag);
+  document.addEventListener("mouseup", stopDrag);
+  document.addEventListener("touchmove", onDrag, { passive: false });
+  document.addEventListener("touchend", stopDrag);
+}
+
+function onDrag(e) {
+  if (!draggingAnnotationId) return;
+  e.preventDefault();
+
+  const action = activeAction();
+  if (!action) return;
+  ensureActionAnnotations(action);
+
+  const ann = action.annotations.find((a) => a.id === draggingAnnotationId);
+  if (!ann) return;
+
+  const rect = annotationLayer.getBoundingClientRect();
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  const x = ((clientX - rect.left) / rect.width) * 100;
+  const y = ((clientY - rect.top) / rect.height) * 100;
+
+  ann.x = Math.max(0, Math.min(100, x));
+  ann.y = Math.max(0, Math.min(100, y));
+
+  const pointEl = annotationLayer.querySelector(`[data-annotation-id="${draggingAnnotationId}"]`);
+  if (pointEl) {
+    pointEl.style.left = `${ann.x}%`;
+    pointEl.style.top = `${ann.y}%`;
+  }
+}
+
+function stopDrag() {
+  if (draggingAnnotationId) {
+    const point = annotationLayer.querySelector(`[data-annotation-id="${draggingAnnotationId}"]`);
+    if (point) point.classList.remove("dragging");
+    save();
+  }
+  draggingAnnotationId = null;
+  document.removeEventListener("mousemove", onDrag);
+  document.removeEventListener("mouseup", stopDrag);
+  document.removeEventListener("touchmove", onDrag);
+  document.removeEventListener("touchend", stopDrag);
+}
+
+function setAnnotationCreatingMode(active) {
+  annotationCreatingMode = active;
+  annotationLayer.classList.toggle("creating-mode", active);
+  annotationLayer.classList.toggle("active", active || getAnnotations().length > 0);
+  addAnnotationBtn.textContent = active ? "✓ 点击图片添加" : "+ 添加批注";
+  addAnnotationBtn.classList.toggle("btn-accent", !active);
+  addAnnotationBtn.classList.toggle("btn-secondary", active);
+}
+
+function handleAnnotationLayerClick(e) {
+  if (!annotationCreatingMode) return;
+  const mediaEl = getCurrentMediaElement();
+  if (!mediaEl) return;
+
+  const rect = annotationLayer.getBoundingClientRect();
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  const x = ((clientX - rect.left) / rect.width) * 100;
+  const y = ((clientY - rect.top) / rect.height) * 100;
+
+  createAnnotation(x, y);
+  setAnnotationCreatingMode(false);
+}
+
+function toggleAnnotationsVisibility() {
+  annotationsHidden = !annotationsHidden;
+  annotationLayer.classList.toggle("hidden-mode", annotationsHidden);
+  toggleAnnotationsBtn.textContent = annotationsHidden ? "显示批注" : "隐藏批注";
+}
+
+function renderAnnotations() {
+  const annotations = getAnnotations();
+  annotationCount.textContent = `${annotations.length} 个批注`;
+
+  const isVideo = isVideoMedia();
+  const currentTime = isVideo ? getCurrentVideoTime() : null;
+
+  annotationLayer.innerHTML = annotations.map((ann, idx) => {
+    const showForVideo = !isVideo || currentTime == null || Math.abs((ann.timestamp || 0) - currentTime) < 0.5;
+    const timeLabel = ann.timestamp != null ? `<div class="annotation-time">⏱ ${formatDuration(ann.timestamp)}</div>` : "";
+    const dirLabel = ann.direction ? `<span class="annotation-direction">${ann.direction}</span>` : "";
+    const noteText = ann.note ? `<p class="annotation-note">${ann.note}</p>` : "";
+
+    return `
+      <div class="annotation-point ${ann.id === editingAnnotationId ? "selected" : ""}" 
+           data-annotation-id="${ann.id}"
+           style="left:${ann.x}%;top:${ann.y}%;${!showForVideo ? "opacity:0.35;" : ""}">
+        <div class="annotation-dot">${idx + 1}</div>
+        <div class="annotation-tooltip">
+          <div class="annotation-tooltip-header">
+            <span class="annotation-body-part">${ann.bodyPart || "未指定"}</span>
+            ${dirLabel}
+          </div>
+          ${noteText}
+          ${timeLabel}
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  annotationLayer.classList.toggle("active", annotations.length > 0 || annotationCreatingMode);
+  bindAnnotationPointEvents();
+}
+
+function bindAnnotationPointEvents() {
+  annotationLayer.querySelectorAll(".annotation-point").forEach((point) => {
+    const id = point.dataset.annotationId;
+
+    point.addEventListener("mousedown", (e) => {
+      if (e.button === 0) startDrag(e, id);
+    });
+    point.addEventListener("touchstart", (e) => startDrag(e, id), { passive: false });
+
+    point.addEventListener("click", (e) => {
+      if (draggingAnnotationId) return;
+      e.stopPropagation();
+      const action = activeAction();
+      if (!action) return;
+      ensureActionAnnotations(action);
+      const ann = action.annotations.find((a) => a.id === id);
+      if (ann) openAnnotationModal(ann);
+    });
+  });
+}
+
+function bindVideoAnnotationSync() {
+  const video = mediaBox.querySelector("video");
+  if (!video) return;
+  video.addEventListener("timeupdate", renderAnnotations);
+  video.addEventListener("pause", () => {
+    const hint = document.createElement("div");
+  });
 }
 
 function readMedia(file) {
@@ -151,23 +441,41 @@ function renderActionHistory() {
 function renderDetail() {
   const action = activeAction();
   if (!action) {
-    mediaBox.innerHTML = "<p>选择或新建一个水袖动作</p>";
+    mediaBox.innerHTML = `<p>选择或新建一个水袖动作</p><div class="annotation-layer" id="annotationLayer"></div>`;
+    const newLayer = document.querySelector("#annotationLayer");
+    if (newLayer) newLayer.replaceWith(annotationLayer);
     timeline.innerHTML = "<p>暂无关键帧。</p>";
     mirrorPane.innerHTML = "<p>暂无对照内容。</p>";
     frameForm.style.display = "none";
+    renderAnnotations();
     renderActionHistory();
+    setAnnotationCreatingMode(false);
     return;
   }
 
+  ensureActionAnnotations(action);
   frameForm.style.display = "block";
+
+  const existingLayer = mediaBox.querySelector(".annotation-layer");
+  if (existingLayer) existingLayer.remove();
+
   if (action.media?.src) {
     const isVideo = action.media.type.startsWith("video/");
-    mediaBox.innerHTML = isVideo
+    const mediaHtml = isVideo
       ? `<video src="${action.media.src}" controls></video>`
       : `<img src="${action.media.src}" alt="${action.name}练习素材">`;
+    mediaBox.innerHTML = mediaHtml;
+    mediaBox.appendChild(annotationLayer);
+    if (isVideo) {
+      bindVideoAnnotationSync();
+    }
   } else {
     mediaBox.innerHTML = `<p>${action.name}还没有上传练习素材</p>`;
+    mediaBox.appendChild(annotationLayer);
   }
+
+  setAnnotationCreatingMode(false);
+  renderAnnotations();
 
   timeline.innerHTML = action.frames.length ? action.frames.map((frame) => `
     <article class="frame-card">
@@ -606,6 +914,7 @@ actionForm.addEventListener("submit", async (event) => {
     tags: data.get("tags").trim(),
     media: pendingMedia,
     frames: [],
+    annotations: [],
     createdAt: new Date().toISOString()
   };
   state.actions.unshift(action);
@@ -662,9 +971,44 @@ document.querySelector("#newActionBtn").addEventListener("click", () => {
 
 tagFilter.addEventListener("input", renderList);
 
+addAnnotationBtn.addEventListener("click", () => {
+  const action = activeAction();
+  if (!action || !action.media?.src) {
+    alert("请先选择一个动作并上传练习图片或视频");
+    return;
+  }
+  if (isVideoMedia()) {
+    const video = mediaBox.querySelector("video");
+    if (video && !video.paused) {
+      video.pause();
+    }
+  }
+  setAnnotationCreatingMode(!annotationCreatingMode);
+});
+
+toggleAnnotationsBtn.addEventListener("click", toggleAnnotationsVisibility);
+
+annotationLayer.addEventListener("click", handleAnnotationLayerClick);
+
+annotationForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (editingAnnotationId) {
+    updateAnnotationFromForm();
+  }
+});
+
+deleteAnnotationBtn.addEventListener("click", deleteAnnotation);
+
+annotationModal.addEventListener("click", (e) => {
+  if (e.target.hasAttribute("data-close-annotation") || e.target === annotationModal) {
+    closeAnnotationModal();
+  }
+});
+
 window.addEventListener("beforeunload", () => {
   stopTimer();
   stopMetronome();
+  stopDrag();
 });
 
 renderAll();

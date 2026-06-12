@@ -863,6 +863,217 @@ form button {
   }
 }
 
+.media-wrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+.annotation-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #fbf4f8 0%, #f5efe8 100%);
+  border-bottom: 1px solid var(--line);
+}
+
+.toolbar-title {
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 14px;
+  margin-right: auto;
+}
+
+.toolbar-count {
+  font-size: 12px;
+  color: var(--muted);
+  background: white;
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+}
+
+.media-box {
+  position: relative;
+  display: grid;
+  min-height: 360px;
+  place-items: center;
+  background: #211b23;
+  color: #f8edf4;
+  overflow: hidden;
+}
+
+.media-box img,
+.media-box video {
+  width: 100%;
+  max-height: 520px;
+  object-fit: contain;
+  background: #211b23;
+  display: block;
+}
+
+.annotation-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.annotation-layer.active {
+  pointer-events: auto;
+}
+
+.annotation-layer.hidden-mode .annotation-point {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.annotation-point {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  cursor: grab;
+  user-select: none;
+  transition: transform 0.1s ease, box-shadow 0.15s ease;
+}
+
+.annotation-point:active {
+  cursor: grabbing;
+}
+
+.annotation-point.dragging {
+  z-index: 100;
+  transition: none;
+}
+
+.annotation-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: white;
+  position: relative;
+}
+
+.annotation-point:hover .annotation-dot {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.annotation-point.selected .annotation-dot {
+  background: var(--gold);
+  transform: scale(1.15);
+  box-shadow: 0 0 0 4px rgba(183, 138, 52, 0.3), 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.annotation-tooltip {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 8px);
+  transform: translateX(-50%);
+  background: white;
+  color: var(--ink);
+  border-radius: 8px;
+  padding: 10px 12px;
+  min-width: 180px;
+  max-width: 260px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--line);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease, visibility 0.15s ease, transform 0.15s ease;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.annotation-point:hover .annotation-tooltip,
+.annotation-point.selected .annotation-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(2px);
+}
+
+.annotation-tooltip::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -6px;
+  transform: translateX(-50%) rotate(45deg);
+  width: 12px;
+  height: 12px;
+  background: white;
+  border-left: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+}
+
+.annotation-tooltip-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed var(--line);
+}
+
+.annotation-body-part {
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.annotation-direction {
+  font-size: 11px;
+  background: var(--gold);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.annotation-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink);
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.annotation-time {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+  font-size: 11px;
+  color: var(--muted);
+  font-family: "SF Mono", "Consolas", monospace;
+}
+
+.annotation-video-info {
+  margin-top: 12px;
+}
+
+.annotation-video-info input {
+  background: #f7f0f4;
+  font-family: "SF Mono", "Consolas", monospace;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.annotation-layer.creating-mode {
+  cursor: crosshair;
+}
+
+.annotation-layer.creating-mode .annotation-point {
+  cursor: grab;
+}
+
 @media (max-width: 640px) {
   .head,
   .row,
@@ -900,5 +1111,20 @@ form button {
 
   .modal-actions button {
     width: 100%;
+  }
+
+  .annotation-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .toolbar-title {
+    width: 100%;
+    margin-right: 0;
+    margin-bottom: 6px;
+  }
+
+  .annotation-tooltip {
+    min-width: 140px;
+    max-width: 200px;
   }
 }
