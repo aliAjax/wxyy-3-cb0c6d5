@@ -1,5 +1,9 @@
 const storageKey = "wxyy-3-kunqu-sleeve-board";
-const state = JSON.parse(localStorage.getItem(storageKey) || '{"actions":[],"activeId":null,"sessions":[],"activeSessionId":null}');
+const state = JSON.parse(localStorage.getItem(storageKey) || '{"actions":[],"activeId":null,"sessions":[],"activeSessionId":null,"choreographies":[],"activeChoreographyId":null}');
+
+window.__appState = state;
+window.__saveAppState = save;
+window.__switchMainTab = switchMainTab;
 
 const actionForm = document.querySelector("#actionForm");
 const frameForm = document.querySelector("#frameForm");
@@ -430,12 +434,27 @@ function switchMainTab(mtab) {
 function renderList() {
   const filter = tagFilter.value.trim();
   const actions = state.actions.filter((action) => !filter || action.tags.includes(filter));
-  actionList.innerHTML = actions.length ? actions.map((action) => `
-    <button class="action-item ${action.id === state.activeId ? "active" : ""}" type="button" data-action="${action.id}">
-      <strong>${action.name}</strong>
-      <span>${action.tags || "无标签"} · ${action.frames.length}个关键帧</span>
-    </button>
-  `).join("") : "<p>还没有动作条目。</p>";
+  actionList.innerHTML = actions.length ? actions.map((action) => {
+    const choreoRefs = window.Choreography?.checkActionReferences(action.id);
+    const refBadge = choreoRefs?.hasReferences
+      ? `<span class="action-ref-badge" title="被 ${choreoRefs.references.length} 个编排引用">📋 ${choreoRefs.references.length}</span>`
+      : "";
+    return `
+      <div class="action-item-wrapper">
+        <button class="action-item ${action.id === state.activeId ? "active" : ""}" type="button" data-action="${action.id}">
+          <div class="action-item-head">
+            <strong>${escapeHtml(action.name)}</strong>
+            ${refBadge}
+          </div>
+          <span>${escapeHtml(action.tags || "无标签")} · ${action.frames.length}个关键帧</span>
+        </button>
+        <div class="action-item-controls">
+          <button type="button" class="btn-small btn-secondary" data-edit-action="${action.id}" title="编辑">✎</button>
+          <button type="button" class="btn-small btn-danger" data-delete-action="${action.id}" title="删除">×</button>
+        </div>
+      </div>
+    `;
+  }).join("") : "<p>还没有动作条目。</p>";
 }
 
 function renderSessionsList() {
@@ -806,6 +825,107 @@ function renderAll() {
   renderSessionsList();
   renderPracticePanel();
   populateSessionActionSelect();
+  if (window.Choreography) {
+    window.Choreography.renderAll();
+  }
+}
+
+function openActionEditModal(actionId) {
+  const action = state.actions.find((a) => a.id === actionId);
+  if (!action) return;
+
+  const modal = document.querySelector("#actionEditModal");
+  if (!modal) return;
+
+  document.querySelector("#editActionName").value = action.name;
+  document.querySelector("#editActionTags").value = action.tags || "";
+  document.querySelector("#editActionId").value = action.id;
+
+  const choreoRefs = window.Choreography?.checkActionReferences(actionId);
+  const refWarning = document.querySelector("#editActionRefWarning");
+  if (refWarning) {
+    if (choreoRefs?.hasReferences) {
+      refWarning.innerHTML = `
+        <div class="choreo-timeline-warning renamed">
+          ⚠ 该动作被 ${choreoRefs.references.length} 个编排引用：
+          ${choreoRefs.references.map((c) => `「${escapeHtml(c.name)}」`).join("、")}
+          <br>修改名称后，编排中将显示名称变更提示。
+        </div>
+      `;
+      refWarning.hidden = false;
+    } else {
+      refWarning.innerHTML = "";
+      refWarning.hidden = true;
+    }
+  }
+
+  modal.hidden = false;
+}
+
+function closeActionEditModal() {
+  const modal = document.querySelector("#actionEditModal");
+  if (modal) modal.hidden = true;
+}
+
+function updateActionFromModal() {
+  const actionId = document.querySelector("#editActionId").value;
+  const newName = document.querySelector("#editActionName").value.trim();
+  const newTags = document.querySelector("#editActionTags").value.trim();
+
+  if (!newName) {
+    alert("请输入动作名称");
+    return;
+  }
+
+  const action = state.actions.find((a) => a.id === actionId);
+  if (!action) return;
+
+  const oldName = action.name;
+  action.name = newName;
+  action.tags = newTags;
+  action.updatedAt = new Date().toISOString();
+
+  if (oldName !== newName && window.Choreography) {
+    window.Choreography.updateSnapshotName(actionId, newName);
+  }
+
+  save();
+  closeActionEditModal();
+  renderAll();
+}
+
+function deleteActionWithCheck(actionId) {
+  const action = state.actions.find((a) => a.id === actionId);
+  if (!action) return;
+
+  const choreoRefs = window.Choreography?.checkActionReferences(actionId);
+  let confirmMsg = `确定删除动作「${action.name}」？`;
+
+  if (choreoRefs?.hasReferences) {
+    const refNames = choreoRefs.references.map((c) => `「${c.name}」`).join("、");
+    confirmMsg += `\n\n⚠ 该动作被 ${choreoRefs.references.length} 个编排引用：${refNames}\n删除后，这些编排中将显示动作已删除的提示。`;
+  }
+
+  if (!confirm(confirmMsg)) return;
+
+  state.actions = state.actions.filter((a) => a.id !== actionId);
+  if (state.activeId === actionId) {
+    state.activeId = null;
+  }
+
+  const relatedSessions = state.sessions.filter((s) => s.actionId === actionId);
+  if (relatedSessions.length > 0) {
+    if (!confirm(`该动作关联 ${relatedSessions.length} 个练习课次，是否同时删除这些课次？\n点击「确定」删除关联课次，点击「取消」保留课次（将显示动作已删除）。`)) {
+    } else {
+      state.sessions = state.sessions.filter((s) => s.actionId !== actionId);
+      if (relatedSessions.some((s) => s.id === state.activeSessionId)) {
+        state.activeSessionId = null;
+      }
+    }
+  }
+
+  save();
+  renderAll();
 }
 
 function openSessionModal() {
@@ -1017,11 +1137,25 @@ frameForm.addEventListener("submit", (event) => {
 });
 
 actionList.addEventListener("click", (event) => {
-  const id = event.target.closest("[data-action]")?.dataset.action;
-  if (!id) return;
-  state.activeId = id;
-  save();
-  renderAll();
+  const editId = event.target.closest("[data-edit-action]")?.dataset.editAction;
+  const deleteId = event.target.closest("[data-delete-action]")?.dataset.deleteAction;
+  const actionId = event.target.closest("[data-action]")?.dataset.action;
+
+  if (editId) {
+    event.stopPropagation();
+    openActionEditModal(editId);
+    return;
+  }
+  if (deleteId) {
+    event.stopPropagation();
+    deleteActionWithCheck(deleteId);
+    return;
+  }
+  if (actionId) {
+    state.activeId = actionId;
+    save();
+    renderAll();
+  }
 });
 
 timeline.addEventListener("click", (event) => {
@@ -1087,5 +1221,36 @@ window.addEventListener("beforeunload", () => {
   stopMetronome();
   stopDrag();
 });
+
+const actionEditModal = document.querySelector("#actionEditModal");
+if (actionEditModal) {
+  actionEditModal.addEventListener("click", (e) => {
+    if (e.target.hasAttribute("data-close-action-edit") || e.target === actionEditModal) {
+      closeActionEditModal();
+    }
+  });
+}
+
+const actionEditForm = document.querySelector("#actionEditForm");
+if (actionEditForm) {
+  actionEditForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    updateActionFromModal();
+  });
+}
+
+if (window.Choreography) {
+  window.Choreography.init(state.choreographies || []);
+  const changes = window.Choreography.detectActionChanges();
+  if (changes.length > 0) {
+    const deleted = changes.filter((c) => c.type === "deleted").length;
+    const renamed = changes.filter((c) => c.type === "renamed").length;
+    let msg = "检测到动作数据变化：\n";
+    if (deleted > 0) msg += `• ${deleted} 个动作已被删除\n`;
+    if (renamed > 0) msg += `• ${renamed} 个动作已改名\n`;
+    msg += "\n编排页面会显示相应提示。";
+    console.log(msg);
+  }
+}
 
 renderAll();

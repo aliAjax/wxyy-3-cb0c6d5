@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>昆曲水袖动作拆解板</title>
   <link rel="stylesheet" href="./style.css" />
+  <link rel="stylesheet" href="./choreography.css" />
 </head>
 <body>
   <main class="app">
@@ -24,6 +25,7 @@
         <div class="tabs" id="sidebarTabs">
           <button class="tab active" type="button" data-tab="actions">动作库</button>
           <button class="tab" type="button" data-tab="sessions">课次记录</button>
+          <button class="tab" type="button" data-tab="choreography">动作编排</button>
         </div>
 
         <div class="tab-panel active" id="panel-actions">
@@ -45,12 +47,21 @@
           </div>
           <div id="sessionsList" class="sessions-list"></div>
         </div>
+
+        <div class="tab-panel" id="panel-choreography">
+          <div class="choreo-header">
+            <h2>动作编排</h2>
+            <button id="newChoreographyBtn" type="button" class="btn-small">+ 新建编排</button>
+          </div>
+          <div id="choreographyList" class="choreo-list"></div>
+        </div>
       </aside>
 
       <section class="main">
         <div class="main-tabs" id="mainTabs">
           <button class="m-tab active" type="button" data-mtab="detail">动作详情</button>
           <button class="m-tab" type="button" data-mtab="practice">练习面板</button>
+          <button class="m-tab" type="button" data-mtab="choreography">编排时间线</button>
         </div>
 
         <div class="m-tab-panel active" id="mtab-detail">
@@ -98,6 +109,14 @@
           <div id="practicePanel" class="practice-panel">
             <div class="practice-empty">
               <p>选择一个课次进入练习，或从左侧课次记录新建课次</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="m-tab-panel" id="mtab-choreography">
+          <div id="choreographyTimeline" class="choreo-timeline">
+            <div class="choreo-timeline-empty">
+              <p>从左侧选择一个编排查看时间线</p>
             </div>
           </div>
         </div>
@@ -209,7 +228,84 @@
         </div>
       </div>
     </div>
+
+    <div class="modal-mask" id="actionEditModal" hidden>
+      <div class="modal">
+        <header class="modal-head">
+          <h3>编辑动作</h3>
+          <button class="modal-close" type="button" data-close-action-edit>×</button>
+        </header>
+        <div class="modal-body">
+          <form id="actionEditForm">
+            <input type="hidden" id="editActionId" name="actionId">
+            <label>动作名称
+              <input id="editActionName" name="name" required placeholder="如：抛袖接转身">
+            </label>
+            <label>标签
+              <input id="editActionTags" name="tags" placeholder="圆场,亮相,慢板">
+            </label>
+            <div id="editActionRefWarning" class="choreo-timeline-warnings" hidden></div>
+            <div class="modal-actions">
+              <button type="button" class="btn-secondary" data-close-action-edit>取消</button>
+              <button type="submit">保存修改</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-mask" id="choreographyModal" hidden>
+      <div class="modal" style="width: min(780px, 100%);">
+        <header class="modal-head">
+          <h3 id="choreographyModalTitle">新建编排</h3>
+          <button class="modal-close" type="button" data-close-choreo-modal>×</button>
+        </header>
+        <div class="modal-body">
+          <form id="choreographyForm" class="choreo-form">
+            <h4>编排信息</h4>
+            <label>编排名称
+              <input name="name" required placeholder="如：出场组合练习">
+            </label>
+            <label>编排描述
+              <textarea name="description" rows="2" placeholder="简要描述这段编排的用途或特点..."></textarea>
+            </label>
+            <button type="submit">保存编排</button>
+          </form>
+
+          <div id="choreoEditorWarnings" class="choreo-editor-warnings" hidden></div>
+
+          <h4>编排动作序列</h4>
+          <div id="choreoItemsList" class="choreo-items-list">
+            <p class="muted">先保存编排，再添加动作</p>
+          </div>
+
+          <div class="add-item-section">
+            <h4>添加动作</h4>
+            <div class="add-item-fields">
+              <label>选择动作
+                <select id="choreoActionSelect">
+                  <option value="">选择动作</option>
+                </select>
+              </label>
+              <label>拍数
+                <input type="number" id="choreoBeatsInput" value="8" min="1" max="64" placeholder="8">
+              </label>
+            </div>
+            <label>过门提示
+              <input type="text" id="choreoTransitionInput" placeholder="如：圆场、亮相、慢板过渡">
+            </label>
+            <div class="add-item-note">
+              <label>衔接备注
+                <textarea id="choreoNoteInput" rows="2" placeholder="描述与上一个动作的衔接要点..."></textarea>
+              </label>
+            </div>
+            <button type="button" id="addChoreoItemBtn" class="btn-accent add-item-btn">+ 添加到编排</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </main>
+  <script src="./choreography.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

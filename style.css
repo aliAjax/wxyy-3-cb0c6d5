@@ -253,6 +253,50 @@ form button {
   margin-bottom: 6px;
 }
 
+.action-item-wrapper {
+  position: relative;
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.action-item-wrapper .action-item {
+  flex: 1;
+}
+
+.action-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.action-ref-badge {
+  font-size: 11px;
+  background: var(--gold);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.action-item-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.action-item-controls .btn-small {
+  width: 30px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+
 .action-item span {
   color: var(--muted);
   font-size: 12px;
