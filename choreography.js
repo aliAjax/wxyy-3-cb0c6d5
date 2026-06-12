@@ -8,6 +8,13 @@ const Choreography = (function () {
 
   function init(initialChoreos = []) {
     state.choreographies = initialChoreos;
+    state.choreographies.forEach((choreo) => {
+      choreo.items.forEach((item) => {
+        if (!Array.isArray(item.previousNames)) {
+          item.previousNames = [];
+        }
+      });
+    });
     bindEvents();
     renderAll();
   }
@@ -73,6 +80,7 @@ const Choreography = (function () {
       id: crypto.randomUUID(),
       actionId: action.id,
       actionSnapshotName: action.name,
+      previousNames: [],
       beats: parseInt(beats, 10) || 8,
       transitionHint: transitionHint.trim(),
       note: note.trim(),
@@ -187,20 +195,27 @@ const Choreography = (function () {
     }
   }
 
-  function updateSnapshotName(actionId, newName) {
-    let changed = false;
-    state.choreographies.forEach((choreo) => {
-      choreo.items.forEach((item) => {
-        if (item.actionId === actionId) {
-          item.actionSnapshotName = newName;
-          changed = true;
-        }
-      });
-    });
-    if (changed) {
-      saveToParent();
-      renderAll();
+  function syncItemSnapshotName(choreoId, itemId) {
+    const choreo = state.choreographies.find((c) => c.id === choreoId);
+    if (!choreo) return null;
+    const item = choreo.items.find((i) => i.id === itemId);
+    if (!item) return null;
+    const actions = window.__appState?.actions || [];
+    const action = actions.find((a) => a.id === item.actionId);
+    if (!action || action.name === item.actionSnapshotName) return null;
+
+    if (!Array.isArray(item.previousNames)) {
+      item.previousNames = [];
     }
+    item.previousNames.push({
+      name: item.actionSnapshotName,
+      changedAt: new Date().toISOString(),
+    });
+    item.actionSnapshotName = action.name;
+    choreo.updatedAt = new Date().toISOString();
+    saveToParent();
+    renderAll();
+    return item;
   }
 
   function getTotalBeats(choreo) {
@@ -213,17 +228,40 @@ const Choreography = (function () {
 
     choreo.items.forEach((item) => {
       const action = actions.find((a) => a.id === item.actionId);
+      const previousNames = Array.isArray(item.previousNames) ? item.previousNames : [];
+
       if (!action) {
+        const historyNames = previousNames.map((p) => p.name);
+        const allKnownNames = [item.actionSnapshotName, ...historyNames];
         warnings.push({
           type: "deleted",
           itemId: item.id,
           message: `动作「${item.actionSnapshotName}」已被删除`,
+          snapshotName: item.actionSnapshotName,
+          previousNames,
+          allKnownNames,
         });
       } else if (action.name !== item.actionSnapshotName) {
+        const historyNames = previousNames.map((p) => p.name);
+        const allKnownNames = [item.actionSnapshotName, ...historyNames];
         warnings.push({
           type: "renamed",
           itemId: item.id,
           message: `动作已改名：「${item.actionSnapshotName}」→「${action.name}」`,
+          oldName: item.actionSnapshotName,
+          newName: action.name,
+          previousNames,
+          allKnownNames,
+        });
+      } else if (previousNames.length > 0) {
+        const historyNames = previousNames.map((p) => p.name);
+        warnings.push({
+          type: "synced",
+          itemId: item.id,
+          message: `动作曾改名，旧名：${historyNames.map((n) => `「${n}」`).join(" → ")}`,
+          currentName: action.name,
+          previousNames,
+          historyNames,
         });
       }
     });
@@ -299,12 +337,28 @@ const Choreography = (function () {
         warningsEl.innerHTML = `
           <div class="choreo-warnings">
             <h4>⚠ 检测到 ${warnings.length} 个问题</h4>
-            ${warnings.map((w) => `
-              <div class="choreo-warning-item ${w.type}">
-                ${escapeHtml(w.message)}
-                ${w.type === "renamed" ? `<button type="button" class="btn-small btn-accent" data-sync-name="${w.itemId}">同步名称</button>` : ""}
-              </div>
-            `).join("")}
+            ${warnings.map((w) => {
+              let detail = "";
+              if (w.type === "renamed" && w.previousNames && w.previousNames.length > 0) {
+                const fullChain = [...w.previousNames.map((p) => escapeHtml(p.name)), escapeHtml(w.newName)];
+                detail = `<div class="choreo-warning-detail">完整改名链：${fullChain.join(" → ")}</div>`;
+              }
+              if (w.type === "synced") {
+                detail = `<div class="choreo-warning-detail">曾用名：${w.historyNames.map((n) => escapeHtml(n)).join(" → ")} → ${escapeHtml(w.currentName)}</div>`;
+              }
+              if (w.type === "deleted" && w.previousNames && w.previousNames.length > 0) {
+                detail = `<div class="choreo-warning-detail">曾用名：${w.allKnownNames.map((n) => escapeHtml(n)).join(" → ")}</div>`;
+              }
+              return `
+                <div class="choreo-warning-item ${w.type}">
+                  <div class="choreo-warning-text">
+                    ${escapeHtml(w.message)}
+                    ${detail}
+                  </div>
+                  ${w.type === "renamed" ? `<button type="button" class="btn-small btn-accent" data-sync-name="${w.itemId}">同步名称</button>` : ""}
+                </div>
+              `;
+            }).join("")}
           </div>
         `;
         warningsEl.hidden = false;
@@ -326,17 +380,55 @@ const Choreography = (function () {
           const action = actions.find((a) => a.id === item.actionId);
           const isDeleted = !action;
           const isRenamed = action && action.name !== item.actionSnapshotName;
-          const rowClass = isDeleted ? "deleted" : isRenamed ? "renamed" : "";
+          const previousNames = Array.isArray(item.previousNames) ? item.previousNames : [];
+          const isSynced = !isDeleted && !isRenamed && previousNames.length > 0;
+          const rowClass = isDeleted ? "deleted" : isRenamed ? "renamed" : isSynced ? "synced" : "";
+
+          let nameSectionHtml = "";
+          if (isRenamed) {
+            const renameChainHtml = previousNames.length > 0
+              ? `<div class="item-name-history">完整改名链：${[...previousNames.map((p) => escapeHtml(p.name)), escapeHtml(item.actionSnapshotName)].join(" → ")} → ${escapeHtml(action.name)}</div>`
+              : "";
+            nameSectionHtml = `
+              <div class="item-rename-group">
+                <div class="item-header">
+                  <strong class="item-name item-name-new">${escapeHtml(action.name)}</strong>
+                  <span class="item-badge renamed">已改名</span>
+                </div>
+                <div class="item-original-name">
+                  <span class="item-name-old">原名：${escapeHtml(item.actionSnapshotName)}</span>
+                  <span class="item-rename-arrow">→</span>
+                  <span class="item-name-new-label">${escapeHtml(action.name)}</span>
+                  <button type="button" class="btn-small btn-accent item-sync-btn" data-sync-name="${item.id}">同步快照</button>
+                </div>
+                ${renameChainHtml}
+              </div>
+            `;
+          } else if (isSynced) {
+            nameSectionHtml = `
+              <div class="item-rename-group">
+                <div class="item-header">
+                  <strong class="item-name">${escapeHtml(item.actionSnapshotName)}</strong>
+                  <span class="item-badge synced">曾改名(已同步)</span>
+                </div>
+                <div class="item-name-history">曾用名：${previousNames.map((p) => escapeHtml(p.name)).join(" → ")} → ${escapeHtml(item.actionSnapshotName)}</div>
+              </div>
+            `;
+          } else {
+            nameSectionHtml = `
+              <div class="item-header">
+                <strong class="item-name">${escapeHtml(item.actionSnapshotName)}</strong>
+                ${isDeleted ? '<span class="item-badge deleted">已删除</span>' : ""}
+              </div>
+              ${isDeleted ? `<div class="item-original-name deleted">此动作已被删除，原名：${escapeHtml(item.actionSnapshotName)}${previousNames.length ? `，曾用名：${previousNames.map((p) => escapeHtml(p.name)).join(" → ")}` : ""}</div>` : ""}
+            `;
+          }
 
           return `
             <div class="choreo-item-row ${rowClass}" data-item="${item.id}">
               <div class="item-order">${idx + 1}</div>
               <div class="item-body">
-                <div class="item-header">
-                  <strong class="item-name">${escapeHtml(item.actionSnapshotName)}</strong>
-                  ${isDeleted ? '<span class="item-badge deleted">已删除</span>' : ""}
-                  ${isRenamed ? `<span class="item-badge renamed">已改名 → ${escapeHtml(action.name)}</span>` : ""}
-                </div>
+                ${nameSectionHtml}
                 <div class="item-fields">
                   <label>拍数
                     <input type="number" class="item-beats" data-item-beats="${item.id}" value="${item.beats}" min="1" max="64">
@@ -382,7 +474,20 @@ const Choreography = (function () {
       warningHtml = `
         <div class="choreo-timeline-warnings">
           <h4>⚠ 编排包含 ${warnings.length} 个需要注意的问题</h4>
-          ${warnings.map((w) => `<div class="choreo-timeline-warning ${w.type}">${escapeHtml(w.message)}</div>`).join("")}
+          ${warnings.map((w) => {
+            let detail = "";
+            if (w.type === "renamed" && w.previousNames && w.previousNames.length > 0) {
+              const fullChain = [...w.previousNames.map((p) => p.name), w.newName];
+              detail = `<div class="choreo-timeline-warning-detail">完整改名链：${fullChain.map((n) => escapeHtml(n)).join(" → ")}</div>`;
+            }
+            if (w.type === "synced") {
+              detail = `<div class="choreo-timeline-warning-detail">曾用名：${w.historyNames.map((n) => escapeHtml(n)).join(" → ")} → ${escapeHtml(w.currentName)}</div>`;
+            }
+            if (w.type === "deleted" && w.previousNames && w.previousNames.length > 0) {
+              detail = `<div class="choreo-timeline-warning-detail">曾用名：${w.allKnownNames.map((n) => escapeHtml(n)).join(" → ")}</div>`;
+            }
+            return `<div class="choreo-timeline-warning ${w.type}">${escapeHtml(w.message)}${detail}</div>`;
+          }).join("")}
         </div>
       `;
     }
@@ -393,22 +498,52 @@ const Choreography = (function () {
         const action = actions.find((a) => a.id === item.actionId);
         const isDeleted = !action;
         const isRenamed = action && action.name !== item.actionSnapshotName;
+        const previousNames = Array.isArray(item.previousNames) ? item.previousNames : [];
+        const isSynced = !isDeleted && !isRenamed && previousNames.length > 0;
+        const trackClass = isDeleted ? "deleted" : isRenamed ? "renamed" : isSynced ? "synced" : "";
         const startBeat = cumulativeBeats;
         cumulativeBeats += item.beats;
         const endBeat = cumulativeBeats;
         const widthPercent = (item.beats / totalBeats) * 100;
 
+        let nameHtml = "";
+        if (isRenamed) {
+          const renameChain = previousNames.length > 0
+            ? [...previousNames.map((p) => `<span class="tl-name-history-item">${escapeHtml(p.name)}</span>`), `<span class="tl-name-old">${escapeHtml(item.actionSnapshotName)}</span>`].join('<span class="tl-name-history-arrow">→</span>')
+            : "";
+          nameHtml = `
+            <div class="tl-name-rename-group">
+              ${renameChain ? `<div class="tl-name-history-chain">${renameChain}<span class="tl-rename-arrow">→</span></div>` : ""}
+              <div class="tl-name tl-name-new">${escapeHtml(action.name)}</div>
+            </div>
+          `;
+        } else if (isSynced) {
+          nameHtml = `
+            <div class="tl-name-synced-group">
+              <div class="tl-name">${escapeHtml(item.actionSnapshotName)}</div>
+              <div class="tl-name-history-chain">
+                ${previousNames.map((p) => `<span class="tl-name-history-item">${escapeHtml(p.name)}</span>`).join('<span class="tl-name-history-arrow">→</span>')}
+                <span class="tl-name-history-arrow">→</span>
+                <span class="tl-name-history-current">${escapeHtml(item.actionSnapshotName)}</span>
+              </div>
+            </div>
+          `;
+        } else {
+          nameHtml = `<div class="tl-name">${escapeHtml(item.actionSnapshotName)}</div>`;
+        }
+
         return `
-          <div class="tl-track ${isDeleted ? "deleted" : isRenamed ? "renamed" : ""}" style="width: ${widthPercent}%">
+          <div class="tl-track ${trackClass}" style="width: ${widthPercent}%">
             <div class="tl-track-inner">
               <div class="tl-order">${item.order + 1}</div>
-              <div class="tl-name">${escapeHtml(item.actionSnapshotName)}</div>
+              ${nameHtml}
               <div class="tl-beats">${item.beats} 拍</div>
               <div class="tl-range">${startBeat + 1}-${endBeat}</div>
               ${item.transitionHint ? `<div class="tl-transition">🎭 ${escapeHtml(item.transitionHint)}</div>` : ""}
               ${item.note ? `<div class="tl-note">${escapeHtml(item.note)}</div>` : ""}
-              ${isDeleted ? '<div class="tl-badge deleted">动作已删除</div>' : ""}
-              ${isRenamed ? `<div class="tl-badge renamed">原: ${escapeHtml(item.actionSnapshotName)}</div>` : ""}
+              ${isDeleted ? `<div class="tl-badge deleted">动作已删除</div><div class="tl-original-name">原名：${escapeHtml(item.actionSnapshotName)}</div>` : ""}
+              ${isRenamed ? `<div class="tl-badge renamed">已改名</div><button type="button" class="btn-small btn-accent tl-sync-btn" data-sync-name="${item.id}">同步快照</button>` : ""}
+              ${isSynced ? `<div class="tl-badge synced">曾改名(已同步)</div>` : ""}
             </div>
           </div>
         `;
@@ -449,15 +584,54 @@ const Choreography = (function () {
           const action = actions.find((a) => a.id === item.actionId);
           const isDeleted = !action;
           const isRenamed = action && action.name !== item.actionSnapshotName;
-          return `
-            <div class="seq-row ${isDeleted ? "deleted" : isRenamed ? "renamed" : ""}">
-              <div class="seq-order">${idx + 1}</div>
-              <div class="seq-info">
+          const previousNames = Array.isArray(item.previousNames) ? item.previousNames : [];
+          const isSynced = !isDeleted && !isRenamed && previousNames.length > 0;
+          const rowClass = isDeleted ? "deleted" : isRenamed ? "renamed" : isSynced ? "synced" : "";
+
+          let nameSectionHtml = "";
+          if (isRenamed) {
+            const renameChain = previousNames.length > 0
+              ? [...previousNames.map((p) => escapeHtml(p.name)), escapeHtml(item.actionSnapshotName)].join(" → ")
+              : "";
+            nameSectionHtml = `
+              <div class="seq-rename-group">
+                <div class="seq-name">
+                  <span class="seq-name-old">${escapeHtml(item.actionSnapshotName)}</span>
+                  <span class="seq-rename-arrow">→</span>
+                  <span class="seq-name-new">${escapeHtml(action.name)}</span>
+                  <span class="seq-badge renamed">已改名</span>
+                </div>
+                ${renameChain ? `<div class="seq-name-history">完整改名链：${renameChain} → ${escapeHtml(action.name)}</div>` : ""}
+                <div class="seq-rename-actions">
+                  <button type="button" class="btn-small btn-accent" data-sync-name="${item.id}">同步快照名称</button>
+                </div>
+              </div>
+            `;
+          } else if (isSynced) {
+            nameSectionHtml = `
+              <div class="seq-rename-group">
                 <div class="seq-name">
                   ${escapeHtml(item.actionSnapshotName)}
-                  ${isDeleted ? '<span class="seq-badge deleted">已删除</span>' : ""}
-                  ${isRenamed ? `<span class="seq-badge renamed">→ ${escapeHtml(action.name)}</span>` : ""}
+                  <span class="seq-badge synced">曾改名(已同步)</span>
                 </div>
+                <div class="seq-name-history">曾用名：${previousNames.map((p) => escapeHtml(p.name)).join(" → ")} → ${escapeHtml(item.actionSnapshotName)}</div>
+              </div>
+            `;
+          } else {
+            nameSectionHtml = `
+              <div class="seq-name">
+                ${escapeHtml(item.actionSnapshotName)}
+                ${isDeleted ? '<span class="seq-badge deleted">已删除</span>' : ""}
+              </div>
+            `;
+          }
+
+          return `
+            <div class="seq-row ${rowClass}">
+              <div class="seq-order">${idx + 1}</div>
+              <div class="seq-info">
+                ${nameSectionHtml}
+                ${isDeleted ? `<div class="seq-original-name deleted">此动作已被删除，原名：${escapeHtml(item.actionSnapshotName)}${previousNames.length ? `，曾用名：${previousNames.map((p) => escapeHtml(p.name)).join(" → ")}` : ""}</div>` : ""}
                 <div class="seq-meta">
                   <span class="seq-beats">🎵 ${item.beats} 拍</span>
                   ${item.transitionHint ? `<span class="seq-transition">🎭 ${escapeHtml(item.transitionHint)}</span>` : ""}
@@ -703,15 +877,8 @@ const Choreography = (function () {
           removeChoreographyItem(state.editingChoreographyId, removeId);
         }
         if (syncId) {
-          const actions = window.__appState?.actions || [];
-          const item = choreo.items.find((i) => i.id === syncId);
-          if (item) {
-            const action = actions.find((a) => a.id === item.actionId);
-            if (action) {
-              updateChoreographyItem(state.editingChoreographyId, syncId, {
-                actionSnapshotName: action.name,
-              });
-            }
+          if (state.editingChoreographyId) {
+            syncItemSnapshotName(state.editingChoreographyId, syncId);
           }
         }
       });
@@ -722,18 +889,7 @@ const Choreography = (function () {
       choreoWarnings.addEventListener("click", (e) => {
         const syncId = e.target.closest("[data-sync-name]")?.dataset.syncName;
         if (syncId && state.editingChoreographyId) {
-          const actions = window.__appState?.actions || [];
-          const choreo = editingChoreography();
-          if (!choreo) return;
-          const item = choreo.items.find((i) => i.id === syncId);
-          if (item) {
-            const action = actions.find((a) => a.id === item.actionId);
-            if (action) {
-              updateChoreographyItem(state.editingChoreographyId, syncId, {
-                actionSnapshotName: action.name,
-              });
-            }
-          }
+          syncItemSnapshotName(state.editingChoreographyId, syncId);
         }
       });
     }
@@ -742,6 +898,16 @@ const Choreography = (function () {
     if (timeline) {
       timeline.addEventListener("click", (e) => {
         const editId = e.target.closest("[data-edit-choreo]")?.dataset.editChoreo;
+        const syncId = e.target.closest("[data-sync-name]")?.dataset.syncName;
+
+        if (syncId) {
+          const choreo = activeChoreography();
+          if (choreo) {
+            syncItemSnapshotName(choreo.id, syncId);
+          }
+          return;
+        }
+
         if (editId) {
           const choreo = state.choreographies.find((c) => c.id === editId);
           openChoreographyModal(choreo);
@@ -766,7 +932,7 @@ const Choreography = (function () {
     checkActionReferences,
     detectActionChanges,
     syncActionNames,
-    updateSnapshotName,
+    syncItemSnapshotName,
     getTotalBeats,
     getChoreographyWarnings,
     renderAll,

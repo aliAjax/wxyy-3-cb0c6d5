@@ -885,10 +885,6 @@ function updateActionFromModal() {
   action.tags = newTags;
   action.updatedAt = new Date().toISOString();
 
-  if (oldName !== newName && window.Choreography) {
-    window.Choreography.updateSnapshotName(actionId, newName);
-  }
-
   save();
   closeActionEditModal();
   renderAll();
