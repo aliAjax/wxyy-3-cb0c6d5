@@ -56,6 +56,72 @@ function activeSession() {
   return state.sessions.find((s) => s.id === state.activeSessionId) || null;
 }
 
+function escapeHtml(str) {
+  if (str == null) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function getMediaDisplayRect() {
+  const mediaEl = getCurrentMediaElement();
+  if (!mediaEl) {
+    const layerRect = annotationLayer.getBoundingClientRect();
+    return { left: layerRect.left, top: layerRect.top, width: layerRect.width, height: layerRect.height };
+  }
+
+  const layerRect = annotationLayer.getBoundingClientRect();
+  const naturalW = mediaEl.videoWidth || mediaEl.naturalWidth || layerRect.width;
+  const naturalH = mediaEl.videoHeight || mediaEl.naturalHeight || layerRect.height;
+
+  const containerW = layerRect.width;
+  const containerH = layerRect.height;
+  const containerRatio = containerW / containerH;
+  const mediaRatio = naturalW / naturalH;
+
+  let displayW, displayH;
+  if (mediaRatio > containerRatio) {
+    displayW = containerW;
+    displayH = containerW / mediaRatio;
+  } else {
+    displayH = containerH;
+    displayW = containerH * mediaRatio;
+  }
+
+  const displayLeft = layerRect.left + (containerW - displayW) / 2;
+  const displayTop = layerRect.top + (containerH - displayH) / 2;
+
+  return { left: displayLeft, top: displayTop, width: displayW, height: displayH };
+}
+
+function clientToMediaPercent(clientX, clientY) {
+  const rect = getMediaDisplayRect();
+  if (rect.width <= 0 || rect.height <= 0) return { x: 50, y: 50 };
+  const x = ((clientX - rect.left) / rect.width) * 100;
+  const y = ((clientY - rect.top) / rect.height) * 100;
+  return {
+    x: Math.max(0, Math.min(100, x)),
+    y: Math.max(0, Math.min(100, y))
+  };
+}
+
+function mediaPercentToLayerStyle(mediaX, mediaY) {
+  const rect = getMediaDisplayRect();
+  const layerRect = annotationLayer.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0 || layerRect.width <= 0 || layerRect.height <= 0) {
+    return { left: `${mediaX}%`, top: `${mediaY}%` };
+  }
+  const pixelX = rect.left - layerRect.left + (rect.width * mediaX) / 100;
+  const pixelY = rect.top - layerRect.top + (rect.height * mediaY) / 100;
+  return {
+    left: `${(pixelX / layerRect.width) * 100}%`,
+    top: `${(pixelY / layerRect.height) * 100}%`
+  };
+}
+
 function ensureActionAnnotations(action) {
   if (!action) return null;
   if (!Array.isArray(action.annotations)) {
@@ -182,12 +248,6 @@ function startDrag(e, annotationId) {
   const point = annotationLayer.querySelector(`[data-annotation-id="${annotationId}"]`);
   if (point) point.classList.add("dragging");
 
-  const rect = annotationLayer.getBoundingClientRect();
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-  dragOffset.x = clientX - rect.left;
-  dragOffset.y = clientY - rect.top;
-
   document.addEventListener("mousemove", onDrag);
   document.addEventListener("mouseup", stopDrag);
   document.addEventListener("touchmove", onDrag, { passive: false });
@@ -205,19 +265,18 @@ function onDrag(e) {
   const ann = action.annotations.find((a) => a.id === draggingAnnotationId);
   if (!ann) return;
 
-  const rect = annotationLayer.getBoundingClientRect();
   const clientX = e.touches ? e.touches[0].clientX : e.clientX;
   const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-  const x = ((clientX - rect.left) / rect.width) * 100;
-  const y = ((clientY - rect.top) / rect.height) * 100;
+  const pos = clientToMediaPercent(clientX, clientY);
 
-  ann.x = Math.max(0, Math.min(100, x));
-  ann.y = Math.max(0, Math.min(100, y));
+  ann.x = pos.x;
+  ann.y = pos.y;
 
   const pointEl = annotationLayer.querySelector(`[data-annotation-id="${draggingAnnotationId}"]`);
   if (pointEl) {
-    pointEl.style.left = `${ann.x}%`;
-    pointEl.style.top = `${ann.y}%`;
+    const style = mediaPercentToLayerStyle(ann.x, ann.y);
+    pointEl.style.left = style.left;
+    pointEl.style.top = style.top;
   }
 }
 
@@ -248,13 +307,11 @@ function handleAnnotationLayerClick(e) {
   const mediaEl = getCurrentMediaElement();
   if (!mediaEl) return;
 
-  const rect = annotationLayer.getBoundingClientRect();
   const clientX = e.touches ? e.touches[0].clientX : e.clientX;
   const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-  const x = ((clientX - rect.left) / rect.width) * 100;
-  const y = ((clientY - rect.top) / rect.height) * 100;
+  const pos = clientToMediaPercent(clientX, clientY);
 
-  createAnnotation(x, y);
+  createAnnotation(pos.x, pos.y);
   setAnnotationCreatingMode(false);
 }
 
@@ -273,18 +330,19 @@ function renderAnnotations() {
 
   annotationLayer.innerHTML = annotations.map((ann, idx) => {
     const showForVideo = !isVideo || currentTime == null || Math.abs((ann.timestamp || 0) - currentTime) < 0.5;
-    const timeLabel = ann.timestamp != null ? `<div class="annotation-time">⏱ ${formatDuration(ann.timestamp)}</div>` : "";
-    const dirLabel = ann.direction ? `<span class="annotation-direction">${ann.direction}</span>` : "";
-    const noteText = ann.note ? `<p class="annotation-note">${ann.note}</p>` : "";
+    const stylePos = mediaPercentToLayerStyle(ann.x, ann.y);
+    const timeLabel = ann.timestamp != null ? `<div class="annotation-time">⏱ ${escapeHtml(formatDuration(ann.timestamp))}</div>` : "";
+    const dirLabel = ann.direction ? `<span class="annotation-direction">${escapeHtml(ann.direction)}</span>` : "";
+    const noteText = ann.note ? `<p class="annotation-note">${escapeHtml(ann.note)}</p>` : "";
 
     return `
       <div class="annotation-point ${ann.id === editingAnnotationId ? "selected" : ""}" 
-           data-annotation-id="${ann.id}"
-           style="left:${ann.x}%;top:${ann.y}%;${!showForVideo ? "opacity:0.35;" : ""}">
+           data-annotation-id="${escapeHtml(ann.id)}"
+           style="left:${stylePos.left};top:${stylePos.top};${!showForVideo ? "opacity:0.35;" : ""}">
         <div class="annotation-dot">${idx + 1}</div>
         <div class="annotation-tooltip">
           <div class="annotation-tooltip-header">
-            <span class="annotation-body-part">${ann.bodyPart || "未指定"}</span>
+            <span class="annotation-body-part">${escapeHtml(ann.bodyPart || "未指定")}</span>
             ${dirLabel}
           </div>
           ${noteText}
@@ -462,12 +520,25 @@ function renderDetail() {
   if (action.media?.src) {
     const isVideo = action.media.type.startsWith("video/");
     const mediaHtml = isVideo
-      ? `<video src="${action.media.src}" controls></video>`
+      ? `<video src="${action.media.src}" controls preload="metadata"></video>`
       : `<img src="${action.media.src}" alt="${action.name}练习素材">`;
     mediaBox.innerHTML = mediaHtml;
     mediaBox.appendChild(annotationLayer);
-    if (isVideo) {
-      bindVideoAnnotationSync();
+    const mediaEl = mediaBox.querySelector("img, video");
+    if (mediaEl) {
+      const rerender = () => renderAnnotations();
+      if (isVideo) {
+        bindVideoAnnotationSync();
+        mediaEl.addEventListener("loadedmetadata", rerender);
+        mediaEl.addEventListener("seeked", rerender);
+      } else {
+        if (mediaEl.complete) {
+          setTimeout(rerender, 0);
+        } else {
+          mediaEl.addEventListener("load", rerender);
+        }
+      }
+      mediaEl.addEventListener("resize", rerender);
     }
   } else {
     mediaBox.innerHTML = `<p>${action.name}还没有上传练习素材</p>`;
@@ -1003,6 +1074,12 @@ annotationModal.addEventListener("click", (e) => {
   if (e.target.hasAttribute("data-close-annotation") || e.target === annotationModal) {
     closeAnnotationModal();
   }
+});
+
+let resizeTimer = null;
+window.addEventListener("resize", () => {
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => renderAnnotations(), 100);
 });
 
 window.addEventListener("beforeunload", () => {
