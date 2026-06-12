@@ -1,5 +1,5 @@
 const storageKey = "wxyy-3-kunqu-sleeve-board";
-const state = JSON.parse(localStorage.getItem(storageKey) || '{"actions":[],"activeId":null,"sessions":[],"activeSessionId":null,"choreographies":[],"activeChoreographyId":null}');
+const state = JSON.parse(localStorage.getItem(storageKey) || '{"actions":[],"activeId":null,"sessions":[],"activeSessionId":null,"choreographies":[],"activeChoreographyId":null,"scores":[]}');
 
 window.__appState = state;
 window.__saveAppState = save;
@@ -50,6 +50,11 @@ let dragOffset = { x: 0, y: 0 };
 
 function save() {
   localStorage.setItem(storageKey, JSON.stringify(state));
+}
+
+if (!Array.isArray(state.scores)) {
+  state.scores = [];
+  save();
 }
 
 function activeAction() {
@@ -585,6 +590,9 @@ function renderDetail() {
   `;
 
   renderActionHistory();
+  if (window.ReviewScoring) {
+    window.ReviewScoring.renderScoreSummary();
+  }
 }
 
 function startTimer() {
@@ -828,6 +836,9 @@ function renderAll() {
   if (window.Choreography) {
     window.Choreography.renderAll();
   }
+  if (window.ReviewScoring) {
+    window.ReviewScoring.renderAll();
+  }
 }
 
 function openActionEditModal(actionId) {
@@ -918,6 +929,11 @@ function deleteActionWithCheck(actionId) {
         state.activeSessionId = null;
       }
     }
+  }
+
+  const relatedScores = Array.isArray(state.scores) ? state.scores.filter((s) => s.actionId === actionId) : [];
+  if (relatedScores.length > 0) {
+    state.scores = state.scores.filter((s) => s.actionId !== actionId);
   }
 
   save();
@@ -1247,6 +1263,10 @@ if (window.Choreography) {
     msg += "\n编排页面会显示相应提示。";
     console.log(msg);
   }
+}
+
+if (window.ReviewScoring) {
+  window.ReviewScoring.init();
 }
 
 renderAll();

@@ -189,7 +189,7 @@ form button {
 
 .tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   border-bottom: 1px solid var(--line);
 }
 
@@ -382,7 +382,7 @@ form button {
 
 .main-tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
   border-bottom: 1px solid var(--line);
   background: #fbf4f8;
 }
@@ -1125,6 +1125,14 @@ form button {
   .practice-controls,
   .tempo-box {
     grid-template-columns: 1fr;
+  }
+
+  .main-tabs {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .tabs {
+    grid-template-columns: 1fr 1fr;
   }
 
   .head {

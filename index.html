@@ -6,6 +6,7 @@
   <title>昆曲水袖动作拆解板</title>
   <link rel="stylesheet" href="./style.css" />
   <link rel="stylesheet" href="./choreography.css" />
+  <link rel="stylesheet" href="./review.css" />
 </head>
 <body>
   <main class="app">
@@ -61,6 +62,7 @@
         <div class="main-tabs" id="mainTabs">
           <button class="m-tab active" type="button" data-mtab="detail">动作详情</button>
           <button class="m-tab" type="button" data-mtab="practice">练习面板</button>
+          <button class="m-tab" type="button" data-mtab="review">复盘评分</button>
           <button class="m-tab" type="button" data-mtab="choreography">编排时间线</button>
         </div>
 
@@ -99,6 +101,11 @@
             <button type="submit">加入关键帧</button>
           </form>
 
+          <div class="review-score-section">
+            <h2>复盘评分</h2>
+            <div id="scoreSummary"></div>
+          </div>
+
           <div class="history-section">
             <h2>关联历史课次</h2>
             <div id="actionHistoryList" class="history-list"></div>
@@ -109,6 +116,14 @@
           <div id="practicePanel" class="practice-panel">
             <div class="practice-empty">
               <p>选择一个课次进入练习，或从左侧课次记录新建课次</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="m-tab-panel" id="mtab-review">
+          <div id="reviewPanel" class="review-panel">
+            <div class="review-panel-empty">
+              <p>选择一个动作后可进行复盘评分</p>
             </div>
           </div>
         </div>
@@ -306,6 +321,7 @@
     </div>
   </main>
   <script src="./choreography.js"></script>
+  <script src="./review.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>
