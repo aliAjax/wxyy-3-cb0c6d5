@@ -4,6 +4,8 @@ const state = JSON.parse(localStorage.getItem(storageKey) || '{"actions":[],"act
 window.__appState = state;
 window.__saveAppState = save;
 window.__switchMainTab = switchMainTab;
+window.__renderAll = () => renderAll();
+window.showToast = showToast;
 
 const actionForm = document.querySelector("#actionForm");
 const frameForm = document.querySelector("#frameForm");

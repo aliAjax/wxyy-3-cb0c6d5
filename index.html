@@ -20,6 +20,9 @@
         <button id="newActionBtn" type="button">新建动作</button>
         <button id="openSessionsBtn" type="button" class="btn-secondary">练习课次</button>
         <button id="openMediaLibraryBtn" type="button" class="btn-secondary">素材库</button>
+        <button id="exportBackupBtn" type="button" class="btn-secondary">📤 导出备份</button>
+        <button id="importBackupBtn" type="button" class="btn-secondary">📥 导入备份</button>
+        <input id="importFileInput" type="file" accept=".json,application/json" hidden>
       </div>
     </header>
 
@@ -504,12 +507,114 @@
       </div>
     </div>
 
+    <div class="modal-mask" id="importPreviewModal" hidden>
+      <div class="modal import-preview-modal">
+        <header class="modal-head">
+          <h3 id="importPreviewTitle">导入项目备份</h3>
+          <button class="modal-close" type="button" data-close-import-preview>×</button>
+        </header>
+        <div class="modal-body" id="importPreviewBody">
+          <div class="import-loading" id="importLoading" hidden>
+            <div class="import-spinner"></div>
+            <p>正在解析备份文件...</p>
+          </div>
+          <div class="import-error" id="importError" hidden>
+            <div class="import-error-icon">⚠</div>
+            <h4 id="importErrorTitle">解析失败</h4>
+            <p id="importErrorMsg"></p>
+          </div>
+          <div class="import-preview-content" id="importPreviewContent" hidden>
+            <div class="import-backup-info">
+              <div class="import-info-row">
+                <span class="import-info-label">备份版本</span>
+                <span id="importBackupVersion">-</span>
+              </div>
+              <div class="import-info-row">
+                <span class="import-info-label">导出时间</span>
+                <span id="importBackupDate">-</span>
+              </div>
+              <div class="import-info-row">
+                <span class="import-info-label">动作数量</span>
+                <span id="importActionCount">-</span>
+              </div>
+              <div class="import-info-row">
+                <span class="import-info-label">编排数量</span>
+                <span id="importChoreoCount">-</span>
+              </div>
+              <div class="import-info-row">
+                <span class="import-info-label">评分数量</span>
+                <span id="importScoreCount">-</span>
+              </div>
+              <div class="import-info-row">
+                <span class="import-info-label">素材引用</span>
+                <span id="importMediaCount">-</span>
+              </div>
+            </div>
+
+            <div class="import-stats-bar">
+              <div class="import-stat stat-add">
+                <span class="stat-icon">➕</span>
+                <span class="stat-label">新增</span>
+                <span class="stat-value" id="statAddCount">0</span>
+              </div>
+              <div class="import-stat stat-overwrite">
+                <span class="stat-icon">🔄</span>
+                <span class="stat-label">覆盖</span>
+                <span class="stat-value" id="statOverwriteCount">0</span>
+              </div>
+              <div class="import-stat stat-skip">
+                <span class="stat-icon">⏭</span>
+                <span class="stat-label">跳过</span>
+                <span class="stat-value" id="statSkipCount">0</span>
+              </div>
+              <div class="import-stat stat-conflict">
+                <span class="stat-icon">⚠</span>
+                <span class="stat-label">冲突</span>
+                <span class="stat-value" id="statConflictCount">0</span>
+              </div>
+            </div>
+
+            <div class="import-section-tabs" id="importSectionTabs">
+              <button type="button" class="import-section-tab active" data-import-section="actions">动作</button>
+              <button type="button" class="import-section-tab" data-import-section="choreographies">编排</button>
+              <button type="button" class="import-section-tab" data-import-section="scores">评分</button>
+              <button type="button" class="import-section-tab" data-import-section="media">素材</button>
+            </div>
+
+            <div class="import-preview-list" id="importPreviewList"></div>
+
+            <div class="import-warnings" id="importWarnings" hidden>
+              <h4>⚠ 注意事项</h4>
+              <ul id="importWarningsList"></ul>
+            </div>
+          </div>
+        </div>
+        <footer class="modal-foot import-modal-foot">
+          <div class="import-options">
+            <label class="import-option">
+              <input type="checkbox" id="importOverwriteDuplicates" checked>
+              <span>覆盖同名/同ID数据（取消则跳过）</span>
+            </label>
+            <label class="import-option">
+              <input type="checkbox" id="importIncludeMedia" checked>
+              <span>导入素材数据（如可用）</span>
+            </label>
+          </div>
+          <div class="import-actions">
+            <button type="button" class="btn-secondary" data-close-import-preview>取消</button>
+            <button type="button" class="btn-accent" id="confirmImportBtn" disabled>确认导入</button>
+          </div>
+        </footer>
+      </div>
+    </div>
+
     <div class="toast-container" id="toastContainer"></div>
   </main>
   <script src="./mediaLibrary.js"></script>
   <script src="./choreography.js"></script>
   <script src="./review.js"></script>
   <script src="./storyboardTimeline.js"></script>
+  <script src="./importExport.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>
