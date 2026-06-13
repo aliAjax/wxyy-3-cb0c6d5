@@ -578,6 +578,7 @@ async function renderList() {
           <span>${escapeHtml(action.tags || "无标签")} · ${action.frames.length}个关键帧</span>
         </button>
         <div class="action-item-controls">
+          <button type="button" class="btn-small btn-secondary" data-copy-action="${action.id}" title="复制为新动作">⎘</button>
           <button type="button" class="btn-small btn-secondary" data-edit-action="${action.id}" title="编辑">✎</button>
           <button type="button" class="btn-small btn-danger" data-delete-action="${action.id}" title="删除">×</button>
         </div>
@@ -1189,6 +1190,44 @@ async function deleteActionWithCheck(actionId) {
   await renderAll();
 }
 
+async function duplicateAction(actionId) {
+  const source = state.actions.find((a) => a.id === actionId);
+  if (!source) return null;
+
+  const newAction = {
+    id: crypto.randomUUID(),
+    name: `${source.name}副本`,
+    tags: source.tags || "",
+    frames: Array.isArray(source.frames)
+      ? source.frames.map((f) => ({ ...f, id: crypto.randomUUID() }))
+      : [],
+    annotations: Array.isArray(source.annotations)
+      ? source.annotations.map((a) => ({ ...a, id: crypto.randomUUID() }))
+      : [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  const mediaRef = getActionMediaRef(source);
+  if (mediaRef) {
+    newAction.mediaId = mediaRef.id;
+    newAction.mediaRef = { ...mediaRef };
+  }
+  if (source.media && source.media.src) {
+    newAction.media = { ...source.media };
+  }
+
+  state.actions.unshift(newAction);
+  state.activeId = newAction.id;
+
+  save();
+  await MediaLibrary.syncUsedByReferences(state);
+  await renderAll();
+
+  showToast(`已复制为新动作「${newAction.name}」`, "success");
+  return newAction;
+}
+
 function openSessionModal() {
   sessionModal.hidden = false;
   populateSessionActionSelect();
@@ -1469,10 +1508,16 @@ frameForm.addEventListener("submit", (event) => {
 });
 
 actionList.addEventListener("click", async (event) => {
+  const copyId = event.target.closest("[data-copy-action]")?.dataset.copyAction;
   const editId = event.target.closest("[data-edit-action]")?.dataset.editAction;
   const deleteId = event.target.closest("[data-delete-action]")?.dataset.deleteAction;
   const actionId = event.target.closest("[data-action]")?.dataset.action;
 
+  if (copyId) {
+    event.stopPropagation();
+    await duplicateAction(copyId);
+    return;
+  }
   if (editId) {
     event.stopPropagation();
     await openActionEditModal(editId);
@@ -1576,6 +1621,16 @@ if (actionEditForm) {
   actionEditForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     await updateActionFromModal();
+  });
+}
+
+const copyActionBtn = document.querySelector("#copyActionBtn");
+if (copyActionBtn) {
+  copyActionBtn.addEventListener("click", async () => {
+    const actionId = document.querySelector("#editActionId").value;
+    if (!actionId) return;
+    closeActionEditModal();
+    await duplicateAction(actionId);
   });
 }
 
