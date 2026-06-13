@@ -4,6 +4,9 @@ const PracticeCalendar = (function () {
   let currentDate = new Date();
   let selectedDate = formatDateKey(new Date());
   let plans = [];
+  let modalEventsBound = false;
+  let isSubmitting = false;
+  let isBatchSubmitting = false;
 
   function formatDateKey(date) {
     const d = new Date(date);
@@ -91,17 +94,17 @@ const PracticeCalendar = (function () {
 
   function createPlan(planData) {
     const plan = {
-      id: crypto.randomUUID(),
+      id: planData.id || crypto.randomUUID(),
       date: planData.date,
       type: planData.type,
       refId: planData.refId,
       refName: planData.refName,
       goal: planData.goal || "",
-      completed: false,
-      completedAt: null,
-      note: "",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      completed: typeof planData.completed === "boolean" ? planData.completed : false,
+      completedAt: planData.completedAt || null,
+      note: planData.note || "",
+      createdAt: planData.createdAt || new Date().toISOString(),
+      updatedAt: planData.updatedAt || new Date().toISOString()
     };
     plans.push(plan);
     save();
@@ -529,8 +532,6 @@ const PracticeCalendar = (function () {
     const modal = document.getElementById("planModal");
     if (!modal) return;
 
-    const form = document.getElementById("planForm");
-    const { actions, choreographies } = getReferenceOptions();
     const isEdit = !!plan;
 
     document.getElementById("planModalTitle").textContent = isEdit ? "编辑练习计划" : "添加练习计划";
@@ -541,10 +542,7 @@ const PracticeCalendar = (function () {
     document.getElementById("planNote").value = plan?.note || "";
 
     const typeSelect = document.getElementById("planType");
-    const refSelect = document.getElementById("planRefId");
     updateRefOptions(typeSelect.value, plan?.refId);
-
-    typeSelect.addEventListener("change", () => updateRefOptions(typeSelect.value));
 
     document.getElementById("planDeleteBtn").hidden = !isEdit;
 
@@ -571,8 +569,6 @@ const PracticeCalendar = (function () {
     const modal = document.getElementById("batchPlanModal");
     if (!modal) return;
 
-    const { actions, choreographies } = getReferenceOptions();
-
     document.getElementById("batchStartDate").value = selectedDate;
     const endDate = new Date(parseDateKey(selectedDate));
     endDate.setDate(endDate.getDate() + 6);
@@ -582,9 +578,6 @@ const PracticeCalendar = (function () {
     document.getElementById("batchSkipWeekends").checked = false;
 
     updateBatchRefOptions("action");
-    document.getElementById("batchType").addEventListener("change", () => {
-      updateBatchRefOptions(document.getElementById("batchType").value);
-    });
 
     modal.hidden = false;
   }
@@ -606,6 +599,9 @@ const PracticeCalendar = (function () {
   }
 
   function bindModalEvents() {
+    if (modalEventsBound) return;
+    modalEventsBound = true;
+
     const planModal = document.getElementById("planModal");
     const batchModal = document.getElementById("batchPlanModal");
 
@@ -621,9 +617,24 @@ const PracticeCalendar = (function () {
       }
     });
 
+    const planTypeSelect = document.getElementById("planType");
+    planTypeSelect?.addEventListener("change", () => {
+      updateRefOptions(planTypeSelect.value);
+    });
+
+    const batchTypeSelect = document.getElementById("batchType");
+    batchTypeSelect?.addEventListener("change", () => {
+      updateBatchRefOptions(batchTypeSelect.value);
+    });
+
     const planForm = document.getElementById("planForm");
     planForm?.addEventListener("submit", (e) => {
       e.preventDefault();
+      if (isSubmitting) return;
+      isSubmitting = true;
+
+      setTimeout(() => { isSubmitting = false; }, 500);
+
       const formData = new FormData(planForm);
       const planId = formData.get("planId");
       const date = formData.get("planDate");
@@ -662,6 +673,7 @@ const PracticeCalendar = (function () {
         showToast("计划已创建", "success");
       }
 
+      planForm.reset();
       planModal.hidden = true;
       selectedDate = date;
       renderCalendar();
@@ -671,6 +683,7 @@ const PracticeCalendar = (function () {
       const planId = document.getElementById("planId").value;
       if (planId && confirm("确定删除该练习计划？")) {
         deletePlan(planId);
+        document.getElementById("planForm")?.reset();
         planModal.hidden = true;
         renderCalendar();
         showToast("计划已删除", "success");
@@ -680,6 +693,11 @@ const PracticeCalendar = (function () {
     const batchForm = document.getElementById("batchPlanForm");
     batchForm?.addEventListener("submit", (e) => {
       e.preventDefault();
+      if (isBatchSubmitting) return;
+      isBatchSubmitting = true;
+
+      setTimeout(() => { isBatchSubmitting = false; }, 1000);
+
       const formData = new FormData(batchForm);
       const startDate = formData.get("batchStartDate");
       const endDate = formData.get("batchEndDate");
@@ -714,6 +732,7 @@ const PracticeCalendar = (function () {
       };
 
       const created = batchCreatePlans(startDate, endDate, template, skipWeekends);
+      batchForm.reset();
       batchModal.hidden = true;
       renderCalendar();
       showToast(`已批量创建 ${created.length} 个练习计划`, "success", 4000);
