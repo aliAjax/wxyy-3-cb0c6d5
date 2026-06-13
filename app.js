@@ -525,6 +525,9 @@ function switchSidebarTab(tab) {
 function switchMainTab(mtab) {
   mainTabs.querySelectorAll(".m-tab").forEach((t) => t.classList.toggle("active", t.dataset.mtab === mtab));
   document.querySelectorAll(".m-tab-panel").forEach((p) => p.classList.toggle("active", p.id === `mtab-${mtab}`));
+  if (mtab === "storyboard" && window.StoryboardTimeline) {
+    window.StoryboardTimeline.renderAll();
+  }
 }
 
 async function renderList() {
@@ -971,6 +974,9 @@ async function renderAll() {
   }
   if (window.ReviewScoring) {
     window.ReviewScoring.renderAll();
+  }
+  if (window.StoryboardTimeline) {
+    window.StoryboardTimeline.renderAll();
   }
 }
 
@@ -1698,6 +1704,10 @@ document.querySelector("#openMediaLibraryBtn")?.addEventListener("click", openMe
 
   if (window.ReviewScoring) {
     window.ReviewScoring.init();
+  }
+
+  if (window.StoryboardTimeline) {
+    window.StoryboardTimeline.init();
   }
 
   await renderAll();

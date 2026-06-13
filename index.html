@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="./style.css" />
   <link rel="stylesheet" href="./choreography.css" />
   <link rel="stylesheet" href="./review.css" />
+  <link rel="stylesheet" href="./storyboardTimeline.css" />
 </head>
 <body>
   <main class="app">
@@ -71,6 +72,7 @@
           <button class="m-tab" type="button" data-mtab="practice">练习面板</button>
           <button class="m-tab" type="button" data-mtab="review">复盘评分</button>
           <button class="m-tab" type="button" data-mtab="choreography">编排时间线</button>
+          <button class="m-tab" type="button" data-mtab="storyboard">分镜工作台</button>
         </div>
 
         <div class="m-tab-panel active" id="mtab-detail">
@@ -139,6 +141,92 @@
           <div id="choreographyTimeline" class="choreo-timeline">
             <div class="choreo-timeline-empty">
               <p>从左侧选择一个编排查看时间线</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="m-tab-panel" id="mtab-storyboard">
+          <div class="storyboard-workbench">
+            <div class="storyboard-toolbar">
+              <div class="storyboard-toolbar-title">
+                分镜时间轴
+                <span class="action-name">未选择动作</span>
+              </div>
+              <button class="btn-small btn-accent" type="button" data-toolbar-action="add">+ 添加关键帧</button>
+              <div class="storyboard-toolbar-divider"></div>
+              <button class="btn-small btn-secondary" type="button" data-toolbar-action="undo" title="撤销 (Ctrl+Z)">↶ 撤销</button>
+              <button class="btn-small btn-secondary" type="button" data-toolbar-action="redo" title="重做 (Ctrl+Y)">↷ 重做</button>
+              <div class="storyboard-toolbar-divider"></div>
+              <button class="btn-small btn-secondary" type="button" data-toolbar-action="collapse" title="收起/展开卡片">收起卡片</button>
+              <div class="storyboard-toolbar-divider"></div>
+              <div class="storyboard-zoom-controls">
+                <button class="storyboard-zoom-btn" type="button" data-toolbar-action="zoom-out" title="缩小">−</button>
+                <span class="storyboard-zoom-level">100%</span>
+                <button class="storyboard-zoom-btn" type="button" data-toolbar-action="zoom-in" title="放大">+</button>
+              </div>
+            </div>
+            <div class="storyboard-timeline-container">
+              <div class="storyboard-ruler"></div>
+              <div class="storyboard-track-area">
+                <div class="storyboard-track">
+                  <div class="storyboard-track-label">关键帧</div>
+                  <div class="storyboard-frames-container"></div>
+                </div>
+              </div>
+            </div>
+            <div class="storyboard-detail-panel collapsed">
+              <div class="storyboard-detail-head">
+                <h3>编辑关键帧</h3>
+              </div>
+              <div class="storyboard-detail-body"></div>
+            </div>
+            <div class="storyboard-keyboard-hint">
+              <button class="storyboard-kbd-toggle btn-small" type="button">⌨ 快捷键</button>
+              <div class="storyboard-kbd-panel">
+                <h4>键盘快捷键</h4>
+                <div class="storyboard-kbd-list">
+                  <div class="storyboard-kbd-item">
+                    <span class="kbd-desc">新建关键帧</span>
+                    <kbd>N</kbd>
+                  </div>
+                  <div class="storyboard-kbd-item">
+                    <span class="kbd-desc">删除选中帧</span>
+                    <kbd>Delete</kbd>
+                  </div>
+                  <div class="storyboard-kbd-item">
+                    <span class="kbd-desc">复制选中帧</span>
+                    <kbd>Ctrl + D</kbd>
+                  </div>
+                  <div class="storyboard-kbd-item">
+                    <span class="kbd-desc">撤销</span>
+                    <kbd>Ctrl + Z</kbd>
+                  </div>
+                  <div class="storyboard-kbd-item">
+                    <span class="kbd-desc">重做</span>
+                    <kbd>Ctrl + Y</kbd>
+                  </div>
+                  <div class="storyboard-kbd-item">
+                    <span class="kbd-desc">展开/收起编辑</span>
+                    <kbd>Enter</kbd>
+                  </div>
+                  <div class="storyboard-kbd-item">
+                    <span class="kbd-desc">左右移动选中帧</span>
+                    <kbd>← →</kbd>
+                  </div>
+                  <div class="storyboard-kbd-item">
+                    <span class="kbd-desc">快速移动(5秒)</span>
+                    <kbd>Shift + ← →</kbd>
+                  </div>
+                  <div class="storyboard-kbd-item">
+                    <span class="kbd-desc">取消选择</span>
+                    <kbd>Esc</kbd>
+                  </div>
+                  <div class="storyboard-kbd-item">
+                    <span class="kbd-desc">显示快捷键</span>
+                    <kbd>?</kbd>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -356,6 +444,7 @@
   <script src="./mediaLibrary.js"></script>
   <script src="./choreography.js"></script>
   <script src="./review.js"></script>
+  <script src="./storyboardTimeline.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>
