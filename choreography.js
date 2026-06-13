@@ -916,6 +916,12 @@ const Choreography = (function () {
     }
   }
 
+  function setActiveChoreographyId(id) {
+    state.activeChoreographyId = id;
+    saveToParent();
+    renderAll();
+  }
+
   return {
     init,
     getState,
@@ -941,6 +947,8 @@ const Choreography = (function () {
     renderChoreographyTimeline,
     openChoreographyModal,
     closeChoreographyModal,
+    setActiveChoreographyId,
+    saveToParent,
   };
 })();
 

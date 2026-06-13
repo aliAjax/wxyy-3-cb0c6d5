@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="./review.css" />
   <link rel="stylesheet" href="./storyboardTimeline.css" />
   <link rel="stylesheet" href="./practiceCalendar.css" />
+  <link rel="stylesheet" href="./knowledgeSearch.css" />
 </head>
 <body>
   <main class="app">
@@ -21,6 +22,7 @@
         <button id="newActionBtn" type="button">新建动作</button>
         <button id="openSessionsBtn" type="button" class="btn-secondary">练习课次</button>
         <button id="openMediaLibraryBtn" type="button" class="btn-secondary">素材库</button>
+        <button id="openSearchBtn" type="button" class="btn-secondary">🔍 搜索</button>
         <button id="exportBackupBtn" type="button" class="btn-secondary">📤 导出备份</button>
         <button id="importBackupBtn" type="button" class="btn-secondary">📥 导入备份</button>
         <input id="importFileInput" type="file" accept=".json,application/json" hidden>
@@ -710,6 +712,20 @@
       </div>
     </div>
 
+    <div class="knowledge-search-overlay" id="knowledgeSearchOverlay">
+      <div class="knowledge-search-panel" id="knowledgeSearchPanel">
+        <div class="ks-panel-inner">
+          <div class="ks-panel-header">
+            <h3>🔍 知识库搜索</h3>
+            <button type="button" class="ks-close-btn" id="ksCloseBtn" title="关闭">×</button>
+          </div>
+          <div style="padding: 40px; text-align: center; color: #999;">
+            加载中...
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="toast-container" id="toastContainer"></div>
   </main>
   <script src="./mediaLibrary.js"></script>
@@ -718,6 +734,7 @@
   <script src="./storyboardTimeline.js"></script>
   <script src="./importExport.js"></script>
   <script src="./practiceCalendar.js"></script>
+  <script src="./knowledgeSearch.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

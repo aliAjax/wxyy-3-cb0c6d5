@@ -88,6 +88,14 @@ function formatSize(bytes) {
 
 function save() {
   localStorage.setItem(storageKey, JSON.stringify(state));
+  if (window.KnowledgeSearch && typeof window.KnowledgeSearch.refreshIndex === "function") {
+    if (!save._throttleTimer) {
+      save._throttleTimer = setTimeout(() => {
+        save._throttleTimer = null;
+        window.KnowledgeSearch.refreshIndex();
+      }, 300);
+    }
+  }
 }
 
 if (!Array.isArray(state.scores)) {
@@ -2325,6 +2333,10 @@ renderAll = async function () {
 
   if (window.PracticeCalendar) {
     window.PracticeCalendar.init();
+  }
+
+  if (window.KnowledgeSearch) {
+    window.KnowledgeSearch.init();
   }
 
   await renderAll();

@@ -48,6 +48,14 @@ const PracticeCalendar = (function () {
       console.warn("日历数据保存失败:", e);
       showToast("日历数据保存失败", "error");
     }
+    if (window.KnowledgeSearch && typeof window.KnowledgeSearch.refreshIndex === "function") {
+      if (!save._throttleTimer) {
+        save._throttleTimer = setTimeout(() => {
+          save._throttleTimer = null;
+          window.KnowledgeSearch.refreshIndex();
+        }, 300);
+      }
+    }
   }
 
   function getAllPlans() {
