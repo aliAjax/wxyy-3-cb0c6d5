@@ -122,6 +122,18 @@ function setActionMediaRef(action, mediaMeta) {
   delete action.media;
 }
 
+function removePersistedMediaThumbnails(appState) {
+  if (!Array.isArray(appState?.actions)) return 0;
+  let removed = 0;
+  appState.actions.forEach((action) => {
+    if (action?.mediaRef && Object.prototype.hasOwnProperty.call(action.mediaRef, "thumbnail")) {
+      delete action.mediaRef.thumbnail;
+      removed++;
+    }
+  });
+  return removed;
+}
+
 function activeAction() {
   return state.actions.find((action) => action.id === state.activeId) || null;
 }
@@ -1658,8 +1670,11 @@ document.querySelector("#openMediaLibraryBtn")?.addEventListener("click", openMe
   }
 
   const result = await MediaLibrary.migrateFromLocalStorage(state);
-  if (result.migrated > 0) {
+  const removedThumbnailRefs = removePersistedMediaThumbnails(state);
+  if (result.migrated > 0 || removedThumbnailRefs > 0) {
     save();
+  }
+  if (result.migrated > 0) {
     await MediaLibrary.syncUsedByReferences(state);
     showToast(`已迁移 ${result.migrated} 个素材到离线素材库`, "success", 4000);
   }
