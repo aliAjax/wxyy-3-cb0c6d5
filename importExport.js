@@ -1,5 +1,5 @@
 const ImportExport = (function () {
-  const BACKUP_VERSION = 2;
+  const BACKUP_VERSION = 3;
   const MIN_SUPPORTED_VERSION = 1;
 
   const ImportStatus = {
@@ -91,6 +91,7 @@ const ImportExport = (function () {
     const actions = JSON.parse(JSON.stringify(appState.actions || []));
     const choreographies = JSON.parse(JSON.stringify(appState.choreographies || []));
     const scores = JSON.parse(JSON.stringify(appState.scores || []));
+    const plans = window.PracticeCalendar ? JSON.parse(JSON.stringify(window.PracticeCalendar.getAllPlans())) : [];
 
     actions.forEach((action) => {
       if (!Array.isArray(action.frames)) action.frames = [];
@@ -132,7 +133,8 @@ const ImportExport = (function () {
       data: {
         actions: actions,
         choreographies: choreographies,
-        scores: scores
+        scores: scores,
+        plans: plans
       },
       media: {
         meta: mediaMeta,
@@ -164,7 +166,7 @@ const ImportExport = (function () {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      showToast(`导出成功：${backup.data.actions.length} 个动作，${backup.data.choreographies.length} 个编排，${backup.data.scores.length} 条评分`, "success", 5000);
+      showToast(`导出成功：${backup.data.actions.length} 个动作，${backup.data.choreographies.length} 个编排，${backup.data.scores.length} 条评分，${backup.data.plans.length} 个练习计划`, "success", 5000);
     } catch (err) {
       console.error("导出失败:", err);
       showToast("导出失败：" + (err.message || err), "error");
@@ -284,6 +286,41 @@ const ImportExport = (function () {
     return { valid: true, issues, sanitized: score };
   }
 
+  function validatePlan(plan) {
+    const issues = [];
+    if (!plan || typeof plan !== "object") {
+      issues.push("练习计划不是有效对象");
+      return { valid: false, issues, sanitized: null };
+    }
+    if (!plan.id || typeof plan.id !== "string") {
+      plan.id = crypto.randomUUID();
+      issues.push("练习计划缺少ID，已自动生成");
+    }
+    if (!plan.date || typeof plan.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(plan.date)) {
+      const today = new Date();
+      plan.date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+      issues.push("练习计划日期无效，已设为今天");
+    }
+    if (!plan.type || (plan.type !== "action" && plan.type !== "choreography")) {
+      plan.type = "action";
+      issues.push("练习计划类型无效，已设为动作");
+    }
+    if (!plan.refId || typeof plan.refId !== "string") {
+      plan.refId = "";
+      issues.push("练习计划缺少关联ID");
+    }
+    if (!plan.refName || typeof plan.refName !== "string") {
+      plan.refName = "(未知内容)";
+    }
+    if (typeof plan.goal !== "string") plan.goal = "";
+    if (typeof plan.completed !== "boolean") plan.completed = false;
+    if (typeof plan.completedAt !== "string" && plan.completedAt !== null) plan.completedAt = null;
+    if (typeof plan.note !== "string") plan.note = "";
+    if (!plan.createdAt) plan.createdAt = new Date().toISOString();
+    if (!plan.updatedAt) plan.updatedAt = new Date().toISOString();
+    return { valid: true, issues, sanitized: plan };
+  }
+
   function validateBackupStructure(backup) {
     const errors = [];
     const warnings = [];
@@ -356,6 +393,21 @@ const ImportExport = (function () {
       }
     }
 
+    if (!Array.isArray(backup.data.plans)) {
+      backup.data.plans = [];
+      warnings.push("备份文件中缺少练习计划数据，使用空数据");
+    } else {
+      const dataIssues = [];
+      backup.data.plans = backup.data.plans.map((p) => {
+        const { sanitized, issues } = validatePlan(p);
+        dataIssues.push(...issues.map((i) => `练习计划(${p?.date || "未知日期"}): ${i}`));
+        return sanitized;
+      }).filter(Boolean);
+      if (dataIssues.length) {
+        warnings.push(`练习计划数据已自动修复 ${dataIssues.length} 处问题`);
+      }
+    }
+
     if (!backup.media || typeof backup.media !== "object") {
       backup.media = { meta: [], data: {} };
       warnings.push("备份文件中缺少素材数据");
@@ -397,6 +449,13 @@ const ImportExport = (function () {
         });
       }
       warnings.push("已从旧版本格式迁移数据（补充默认字段）");
+    }
+
+    if (version < 3) {
+      if (!Array.isArray(backup.data.plans)) {
+        backup.data.plans = [];
+      }
+      warnings.push("已从旧版本格式迁移数据（补充练习计划字段）");
     }
 
     return { backup, warnings };
@@ -457,6 +516,7 @@ const ImportExport = (function () {
       actions: [],
       choreographies: [],
       scores: [],
+      plans: [],
       media: {
         available: [],
         missing: [],
@@ -479,6 +539,7 @@ const ImportExport = (function () {
     const existingChoreoNames = new Map();
     (appState.choreographies || []).forEach((c) => existingChoreoNames.set((c.name || "").toLowerCase(), c));
     const existingScoreIds = new Set((appState.scores || []).map((s) => s.id));
+    const existingPlanIds = new Set(window.PracticeCalendar ? window.PracticeCalendar.getAllPlans().map((p) => p.id) : []);
 
     const allExistingMedia = await MediaLibrary.getAllMedia();
     const existingMediaIds = new Set(allExistingMedia.map((m) => m.id));
@@ -632,6 +693,46 @@ const ImportExport = (function () {
       }
     });
 
+    (backup.data.plans || []).forEach((plan) => {
+      if (!plan || !plan.id || !plan.date) {
+        result.stats.error++;
+        result.plans.push({
+          status: ImportStatus.ERROR,
+          data: plan,
+          message: "练习计划数据无效（缺少ID或日期）",
+          resolveMode: ResolveMode.SKIP
+        });
+        return;
+      }
+
+      let status;
+      let message = "";
+      if (existingPlanIds.has(plan.id)) {
+        status = ImportStatus.OVERWRITE;
+        message = "ID已存在，将覆盖当前数据";
+      } else {
+        status = ImportStatus.ADD;
+      }
+
+      result.stats[status]++;
+      result.plans.push({
+        status,
+        data: plan,
+        message
+      });
+    });
+
+    const importedChoreoIds = new Set(backup.data.choreographies.filter((c) => c && c.id).map((c) => c.id));
+    const allChoreoIds = new Set([...existingChoreoIds, ...importedChoreoIds]);
+    backup.data.plans.forEach((plan) => {
+      if (plan && plan.refId) {
+        const validIds = plan.type === "choreography" ? allChoreoIds : allActionIds;
+        if (!validIds.has(plan.refId)) {
+          result.warnings.push(`练习计划(${plan.date})引用的${plan.type === "choreography" ? "编排" : "动作"}「${plan.refName}」在导入后可能无法关联，将显示为失效状态`);
+        }
+      }
+    });
+
     return result;
   }
 
@@ -682,6 +783,10 @@ const ImportExport = (function () {
         items = currentPreview.scores;
         title = "评分";
         break;
+      case "plans":
+        items = currentPreview.plans;
+        title = "练习计划";
+        break;
       case "media":
         renderMediaList(listEl);
         return;
@@ -719,6 +824,9 @@ const ImportExport = (function () {
       const action = (parsedBackupData?.data?.actions || []).find((a) => a.id === data.actionId);
       name = action ? `${action.name} 的评分` : "未知动作评分";
       detail = `总分 ${data.total || 0}/${data.maxTotal || 0} · ${formatDate(data.createdAt)}`;
+    } else if (section === "plans") {
+      name = `${data.date} · ${data.refName || "未知内容"}`;
+      detail = `${data.type === "choreography" ? "编排" : "动作"} · ${data.completed ? "已完成" : "未完成"} · ${formatDate(data.createdAt)}`;
     }
 
     const conflictHint = item.existingData
@@ -807,7 +915,7 @@ const ImportExport = (function () {
 
     const stats = { add: 0, overwrite: 0, skip: 0, conflict: 0, error: 0 };
 
-    ["actions", "choreographies", "scores"].forEach((section) => {
+    ["actions", "choreographies", "scores", "plans"].forEach((section) => {
       currentPreview[section].forEach((item) => {
         const eff = getEffectiveStatus(item, overwriteEnabled);
         stats[eff] = (stats[eff] || 0) + 1;
@@ -850,6 +958,7 @@ const ImportExport = (function () {
     document.getElementById("importActionCount").textContent = `${parsedBackupData.data.actions.length} 个`;
     document.getElementById("importChoreoCount").textContent = `${parsedBackupData.data.choreographies.length} 个`;
     document.getElementById("importScoreCount").textContent = `${parsedBackupData.data.scores.length} 条`;
+    document.getElementById("importPlanCount").textContent = `${parsedBackupData.data.plans.length} 个`;
     const mediaCount = (parsedBackupData.media?.meta?.length || 0);
     document.getElementById("importMediaCount").textContent = `${mediaCount} 个引用`;
 
@@ -1302,6 +1411,49 @@ const ImportExport = (function () {
         } catch (scoreErr) {
           importResult.failed.push({ type: "评分", name: "未知", error: scoreErr.message || scoreErr });
           console.error("评分导入失败:", scoreErr);
+        }
+      }
+
+      if (window.PracticeCalendar) {
+        const validLocalActionIds = new Set((appState.actions || []).map((a) => a.id));
+        const validLocalChoreoIds = new Set((appState.choreographies || []).map((c) => c.id));
+
+        for (let i = 0; i < currentPreview.plans.length; i++) {
+          const item = currentPreview.plans[i];
+          const effStatus = getEffectiveStatus(item, overwriteEnabled);
+          try {
+            if (item.status === ImportStatus.ERROR || effStatus === ImportStatus.SKIP) {
+              if (item.status === ImportStatus.ERROR) {
+                importResult.failed.push({ type: "练习计划", name: item.data?.date || "(无效数据)", error: item.message });
+              } else {
+                importResult.skipped.push({ type: "练习计划", name: item.data?.date, reason: "用户选择跳过" });
+              }
+              continue;
+            }
+
+            const planData = JSON.parse(JSON.stringify(item.data));
+
+            if (planData.refId && idRemap[`${planData.type}:${planData.refId}`]) {
+              planData.refId = idRemap[`${planData.type}:${planData.refId}`];
+            }
+
+            const validIds = planData.type === "choreography" ? validLocalChoreoIds : validLocalActionIds;
+            if (planData.refId && !validIds.has(planData.refId) && !idRemap[`${planData.type}:${planData.refId}`]) {
+              importResult.warnings = importResult.warnings || [];
+              importResult.warnings.push(`练习计划(${planData.date})引用的${planData.type === "choreography" ? "编排" : "动作"}导入失败，计划将保留但显示为失效状态`);
+            }
+
+            if (item.status === ImportStatus.OVERWRITE) {
+              window.PracticeCalendar.updatePlan(planData.id, planData);
+              importResult.success.push({ type: "练习计划", name: `${planData.date} · ${planData.refName}`, status: "覆盖" });
+            } else {
+              window.PracticeCalendar.createPlan(planData);
+              importResult.success.push({ type: "练习计划", name: `${planData.date} · ${planData.refName}`, status: "新增" });
+            }
+          } catch (planErr) {
+            importResult.failed.push({ type: "练习计划", name: item.data?.date || "未知", error: planErr.message || planErr });
+            console.error("练习计划导入失败:", planErr);
+          }
         }
       }
 

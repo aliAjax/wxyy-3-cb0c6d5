@@ -530,6 +530,9 @@ function switchMainTab(mtab) {
   if (mtab === "storyboard" && window.StoryboardTimeline) {
     window.StoryboardTimeline.renderAll();
   }
+  if (mtab === "calendar" && window.PracticeCalendar) {
+    window.PracticeCalendar.renderAll();
+  }
 }
 
 async function renderList() {
@@ -1004,6 +1007,12 @@ async function renderAll() {
   }
   if (window.StoryboardTimeline) {
     window.StoryboardTimeline.renderAll();
+  }
+  if (window.PracticeCalendar) {
+    const activeTab = document.querySelector('.m-tab.active');
+    if (activeTab && activeTab.dataset.mtab === 'calendar') {
+      window.PracticeCalendar.renderAll();
+    }
   }
 }
 
@@ -2312,6 +2321,10 @@ renderAll = async function () {
 
   if (window.MirrorTraining) {
     window.MirrorTraining.init();
+  }
+
+  if (window.PracticeCalendar) {
+    window.PracticeCalendar.init();
   }
 
   await renderAll();

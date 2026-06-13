@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="./choreography.css" />
   <link rel="stylesheet" href="./review.css" />
   <link rel="stylesheet" href="./storyboardTimeline.css" />
+  <link rel="stylesheet" href="./practiceCalendar.css" />
 </head>
 <body>
   <main class="app">
@@ -73,6 +74,7 @@
         <div class="main-tabs" id="mainTabs">
           <button class="m-tab active" type="button" data-mtab="detail">动作详情</button>
           <button class="m-tab" type="button" data-mtab="practice">练习面板</button>
+          <button class="m-tab" type="button" data-mtab="calendar">练习日历</button>
           <button class="m-tab" type="button" data-mtab="review">复盘评分</button>
           <button class="m-tab" type="button" data-mtab="choreography">编排时间线</button>
           <button class="m-tab" type="button" data-mtab="storyboard">分镜工作台</button>
@@ -131,6 +133,10 @@
               <p>选择一个课次进入练习，或从左侧课次记录新建课次</p>
             </div>
           </div>
+        </div>
+
+        <div class="m-tab-panel" id="mtab-calendar">
+          <div id="practiceCalendar" class="practice-calendar"></div>
         </div>
 
         <div class="m-tab-panel" id="mtab-review">
@@ -507,6 +513,97 @@
       </div>
     </div>
 
+    <div class="modal-mask cal-modal" id="planModal" hidden>
+      <div class="modal">
+        <header class="modal-head">
+          <h3 id="planModalTitle">添加练习计划</h3>
+          <button class="modal-close" type="button" data-close-plan-modal>×</button>
+        </header>
+        <div class="modal-body">
+          <form id="planForm" class="cal-form">
+            <input type="hidden" id="planId" name="planId">
+            <div class="row">
+              <label>计划日期
+                <input type="date" id="planDate" name="planDate" required>
+              </label>
+              <label>关联类型
+                <select id="planType" name="planType" required>
+                  <option value="action">动作</option>
+                  <option value="choreography">编排</option>
+                </select>
+              </label>
+            </div>
+            <label>关联内容
+              <select id="planRefId" name="planRefId" required>
+                <option value="">请选择动作</option>
+              </select>
+            </label>
+            <label>练习目标
+              <input type="text" id="planGoal" name="planGoal" placeholder="如：重复练习10次，重点关注手腕发力">
+            </label>
+            <label>备注
+              <textarea id="planNote" name="planNote" rows="2" placeholder="可选：添加练习备注..."></textarea>
+            </label>
+            <div class="modal-actions">
+              <button type="button" class="btn-danger" id="planDeleteBtn" hidden>删除计划</button>
+              <button type="button" class="btn-secondary" data-close-plan-modal>取消</button>
+              <button type="submit">保存计划</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-mask cal-modal" id="batchPlanModal" hidden>
+      <div class="modal">
+        <header class="modal-head">
+          <h3>批量生成练习计划</h3>
+          <button class="modal-close" type="button" data-close-batch-modal>×</button>
+        </header>
+        <div class="modal-body">
+          <form id="batchPlanForm" class="cal-form">
+            <div class="row">
+              <label>开始日期
+                <input type="date" id="batchStartDate" name="batchStartDate" required>
+              </label>
+              <label>结束日期
+                <input type="date" id="batchEndDate" name="batchEndDate" required>
+              </label>
+            </div>
+            <div class="row">
+              <label>关联类型
+                <select id="batchType" name="batchType" required>
+                  <option value="action">动作</option>
+                  <option value="choreography">编排</option>
+                </select>
+              </label>
+              <label>关联内容
+                <select id="batchRefId" name="batchRefId" required>
+                  <option value="">请选择动作</option>
+                </select>
+              </label>
+            </div>
+            <label>练习目标
+              <input type="text" id="batchGoal" name="batchGoal" placeholder="如：每日重复练习10次">
+            </label>
+            <div class="batch-options">
+              <label>
+                <input type="checkbox" id="batchSkipWeekends" name="batchSkipWeekends">
+                <span>跳过周末</span>
+              </label>
+            </div>
+            <div class="batch-hint">
+              💡 系统将为日期范围内的每一天创建一个独立的练习计划，勾选"跳过周末"可自动排除周六和周日。
+            </div>
+            <div class="modal-actions">
+              <button type="button" class="btn-secondary" data-close-batch-modal>取消</button>
+              <button type="submit" class="btn-accent">批量生成</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-mask" id="importPreviewModal" hidden>
       <div class="modal import-preview-modal">
         <header class="modal-head">
@@ -546,6 +643,10 @@
                 <span id="importScoreCount">-</span>
               </div>
               <div class="import-info-row">
+                <span class="import-info-label">练习计划</span>
+                <span id="importPlanCount">-</span>
+              </div>
+              <div class="import-info-row">
                 <span class="import-info-label">素材引用</span>
                 <span id="importMediaCount">-</span>
               </div>
@@ -578,6 +679,7 @@
               <button type="button" class="import-section-tab active" data-import-section="actions">动作</button>
               <button type="button" class="import-section-tab" data-import-section="choreographies">编排</button>
               <button type="button" class="import-section-tab" data-import-section="scores">评分</button>
+              <button type="button" class="import-section-tab" data-import-section="plans">练习计划</button>
               <button type="button" class="import-section-tab" data-import-section="media">素材</button>
             </div>
 
@@ -615,6 +717,7 @@
   <script src="./review.js"></script>
   <script src="./storyboardTimeline.js"></script>
   <script src="./importExport.js"></script>
+  <script src="./practiceCalendar.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>
