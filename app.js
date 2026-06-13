@@ -4,6 +4,8 @@ const state = JSON.parse(localStorage.getItem(storageKey) || '{"actions":[],"act
 window.__appState = state;
 window.__saveAppState = save;
 window.__switchMainTab = switchMainTab;
+window.renderDetail = () => renderDetail();
+window.renderAnnotations = () => renderAnnotations();
 
 const actionForm = document.querySelector("#actionForm");
 const frameForm = document.querySelector("#frameForm");
@@ -708,7 +710,29 @@ async function renderDetail() {
   setAnnotationCreatingMode(false);
   renderAnnotations();
 
-  timeline.innerHTML = action.frames.length ? action.frames.map((frame) => `
+  const sortedFrames = Array.isArray(action.frames) ? [...action.frames].sort((a, b) => {
+    const aOrder = typeof a.order === "number" ? a.order : Infinity;
+    const bOrder = typeof b.order === "number" ? b.order : Infinity;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    const parseTime = (t) => {
+      if (!t) return null;
+      const s = String(t).trim();
+      const m1 = s.match(/^(\d+):(\d+)(?::(\d+))?$/);
+      if (m1) return Number(m1[1]) * 60 + Number(m1[2]) + (m1[3] ? Number(m1[3]) / 1000 : 0);
+      const m2 = s.match(/^(\d{1,2})(\d{2})$/);
+      if (m2) return Number(m2[1]) * 60 + Number(m2[2]);
+      const n = Number(s);
+      return !isNaN(n) && isFinite(n) ? n : null;
+    };
+    const at = parseTime(a.time);
+    const bt = parseTime(b.time);
+    if (at != null && bt != null) return at - bt;
+    if (at != null) return -1;
+    if (bt != null) return 1;
+    return 0;
+  }) : [];
+
+  timeline.innerHTML = sortedFrames.length ? sortedFrames.map((frame) => `
     <article class="frame-card">
       <header><span>${frame.stage} · ${frame.time || "未定时点"}</span><button type="button" data-delete-frame="${frame.id}">删除</button></header>
       <p>重心：${frame.weight || "未记录"}</p>
@@ -718,11 +742,11 @@ async function renderDetail() {
     </article>
   `).join("") : "<p>还没有关键帧。</p>";
 
-  const left = action.frames.filter((frame) => /左|偏左|左手/.test(`${frame.weight}${frame.wrist}${frame.note}`));
-  const right = action.frames.filter((frame) => /右|偏右|右手/.test(`${frame.weight}${frame.wrist}${frame.note}`));
+  const left = sortedFrames.filter((frame) => /左|偏左|左手/.test(`${frame.weight}${frame.wrist}${frame.note}`));
+  const right = sortedFrames.filter((frame) => /右|偏右|右手/.test(`${frame.weight}${frame.wrist}${frame.note}`));
   mirrorPane.innerHTML = `
-    <div class="hand"><strong>左手线索</strong>${(left.length ? left : action.frames).slice(0, 4).map((frame) => `<p>${frame.stage}: ${frame.wrist || frame.note || "待补充"}</p>`).join("") || "<p>暂无</p>"}</div>
-    <div class="hand"><strong>右手线索</strong>${(right.length ? right : action.frames).slice(0, 4).map((frame) => `<p>${frame.stage}: ${frame.wrist || frame.note || "待补充"}</p>`).join("") || "<p>暂无</p>"}</div>
+    <div class="hand"><strong>左手线索</strong>${(left.length ? left : sortedFrames).slice(0, 4).map((frame) => `<p>${frame.stage}: ${frame.wrist || frame.note || "待补充"}</p>`).join("") || "<p>暂无</p>"}</div>
+    <div class="hand"><strong>右手线索</strong>${(right.length ? right : sortedFrames).slice(0, 4).map((frame) => `<p>${frame.stage}: ${frame.wrist || frame.note || "待补充"}</p>`).join("") || "<p>暂无</p>"}</div>
   `;
 
   renderActionHistory();

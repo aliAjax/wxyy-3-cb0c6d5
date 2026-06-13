@@ -131,8 +131,7 @@ const StoryboardTimeline = (function () {
     state.redoStack.push(currentSnapshot);
 
     action.frames = prevSnapshot.frames;
-    saveToParent();
-    renderAll();
+    commitChanges();
     showSnackbar("已撤销", "undo");
     return true;
   }
@@ -152,8 +151,7 @@ const StoryboardTimeline = (function () {
     state.undoStack.push(currentSnapshot);
 
     action.frames = nextSnapshot.frames;
-    saveToParent();
-    renderAll();
+    commitChanges();
     showSnackbar("已重做", "undo");
     return true;
   }
@@ -188,9 +186,35 @@ const StoryboardTimeline = (function () {
     }
   }
 
+  function syncFramesOrder() {
+    const action = getActiveAction();
+    if (!action || !Array.isArray(action.frames)) return;
+    const sorted = getSortedFrames();
+    sorted.forEach((f, idx) => {
+      f.order = idx;
+    });
+    action.frames = sorted;
+  }
+
+  function commitChanges(syncDetail = true) {
+    syncFramesOrder();
+    saveToParent();
+    renderAll();
+    if (syncDetail) {
+      syncParentDetail();
+    }
+  }
+
   function getSortedFrames() {
     const frames = getFrames();
     return [...frames].sort((a, b) => {
+      if (typeof a.order === "number" && typeof b.order === "number") {
+        if (a.order !== b.order) return a.order - b.order;
+      } else if (typeof a.order === "number") {
+        return -1;
+      } else if (typeof b.order === "number") {
+        return 1;
+      }
       const timeA = getFrameTimeSeconds(a);
       const timeB = getFrameTimeSeconds(b);
       if (timeA != null && timeB != null) return timeA - timeB;
@@ -247,9 +271,7 @@ const StoryboardTimeline = (function () {
     state.selectedFrameId = frame.id;
     state.expandedFrameId = frame.id;
 
-    saveToParent();
-    renderAll();
-    syncParentDetail();
+    commitChanges();
     showSnackbar("已添加关键帧", "success");
     return frame;
   }
@@ -277,9 +299,7 @@ const StoryboardTimeline = (function () {
     action.frames.push(newFrame);
     state.selectedFrameId = newFrame.id;
 
-    saveToParent();
-    renderAll();
-    syncParentDetail();
+    commitChanges();
     showSnackbar("已复制关键帧", "success");
     return newFrame;
   }
@@ -299,9 +319,7 @@ const StoryboardTimeline = (function () {
     if (state.expandedFrameId === frameId) state.expandedFrameId = null;
     if (state.editingTimeFrameId === frameId) state.editingTimeFrameId = null;
 
-    saveToParent();
-    renderAll();
-    syncParentDetail();
+    commitChanges();
     showSnackbar("已删除关键帧", "info");
     return true;
   }
@@ -316,9 +334,7 @@ const StoryboardTimeline = (function () {
     saveSnapshot("update-frame");
     Object.assign(frame, updates, { updatedAt: new Date().toISOString() });
 
-    saveToParent();
-    renderAll();
-    syncParentDetail();
+    commitChanges();
     return frame;
   }
 
@@ -337,9 +353,7 @@ const StoryboardTimeline = (function () {
     frame.time = newTimeStr.trim();
     frame.updatedAt = new Date().toISOString();
 
-    saveToParent();
-    renderAll();
-    syncParentDetail();
+    commitChanges();
     return true;
   }
 
@@ -359,15 +373,32 @@ const StoryboardTimeline = (function () {
     const [frame] = sortedFrames.splice(currentIndex, 1);
     sortedFrames.splice(targetIndex, 0, frame);
 
+    const prevFrame = sortedFrames[targetIndex - 1];
+    const nextFrame = sortedFrames[targetIndex + 1];
+    const prevTime = prevFrame ? getFrameTimeSeconds(prevFrame) : null;
+    const nextTime = nextFrame ? getFrameTimeSeconds(nextFrame) : null;
+
+    let newTime;
+    if (prevTime != null && nextTime != null) {
+      newTime = (prevTime + nextTime) / 2;
+    } else if (prevTime != null) {
+      newTime = prevTime + 1;
+    } else if (nextTime != null) {
+      newTime = Math.max(0, nextTime - 1);
+    } else {
+      newTime = 0;
+    }
+
+    frame.time = formatTime(newTime);
+    frame.updatedAt = new Date().toISOString();
+
     sortedFrames.forEach((f, idx) => {
       f.order = idx;
     });
 
     action.frames = [...sortedFrames];
 
-    saveToParent();
-    renderAll();
-    syncParentDetail();
+    commitChanges();
     return true;
   }
 
@@ -389,9 +420,7 @@ const StoryboardTimeline = (function () {
     frame.time = formatTime(clampedTime);
     frame.updatedAt = new Date().toISOString();
 
-    saveToParent();
-    renderAll();
-    syncParentDetail();
+    commitChanges();
     return true;
   }
 
@@ -481,7 +510,8 @@ const StoryboardTimeline = (function () {
     const rulerEl = document.querySelector(".storyboard-ruler");
     if (!rulerEl) return;
 
-    const maxTime = getMaxTime();
+    const action = getActiveAction();
+    const maxTime = action ? getMaxTime() : 30;
     const totalWidth = maxTime * PIXELS_PER_SECOND * state.zoomLevel + 60;
     rulerEl.style.width = `${totalWidth}px`;
 
@@ -508,17 +538,12 @@ const StoryboardTimeline = (function () {
     if (!container) return;
 
     const action = getActiveAction();
-    const frames = getSortedFrames();
-
-    if (!action) {
-      container.innerHTML = "";
-      return;
-    }
-
-    const totalWidth = getTimelineWidth();
+    const frames = action ? getSortedFrames() : [];
+    const maxTime = action ? getMaxTime() : 30;
+    const totalWidth = maxTime * PIXELS_PER_SECOND * state.zoomLevel + 100;
     container.style.width = `${totalWidth}px`;
 
-    if (!frames.length) {
+    if (!action || !frames.length) {
       container.innerHTML = "";
       return;
     }
@@ -754,7 +779,6 @@ const StoryboardTimeline = (function () {
         <p>从左侧动作库选择或新建一个水袖动作</p>
         <p>然后在分镜时间轴中编排关键帧</p>
       `;
-      timelineContainer.innerHTML = "";
       timelineContainer.appendChild(noActionEl);
       return;
     }
@@ -772,7 +796,6 @@ const StoryboardTimeline = (function () {
           <kbd>D</kbd> 复制 · <kbd>Ctrl+Z</kbd> 撤销
         </div>
       `;
-      timelineContainer.innerHTML = "";
       timelineContainer.appendChild(emptyStateEl);
     }
   }
@@ -1074,10 +1097,15 @@ const StoryboardTimeline = (function () {
   }
 
   function syncParentDetail() {
+    syncFramesOrder();
     if (typeof window.renderDetail === "function") {
       window.renderDetail();
     }
-    if (typeof window.renderAll === "function") {
+    if (typeof window.renderFramesList === "function") {
+      window.renderFramesList();
+    }
+    if (typeof window.renderAnnotations === "function") {
+      window.renderAnnotations();
     }
   }
 
