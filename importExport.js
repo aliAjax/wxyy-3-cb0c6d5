@@ -914,11 +914,13 @@ const ImportExport = (function () {
     if (contentEl) contentEl.hidden = false;
   }
 
-  function resetPreview() {
+  function resetPreview(keepResult = false) {
     currentPreview = null;
     parsedBackupData = null;
     currentSection = "actions";
-    lastImportResult = null;
+    if (!keepResult) {
+      lastImportResult = null;
+    }
     const fileInput = document.getElementById("importFileInput");
     if (fileInput) fileInput.value = "";
   }
@@ -929,7 +931,7 @@ const ImportExport = (function () {
     if (!keepResultModal) {
       hideImportResultModal();
     }
-    resetPreview();
+    resetPreview(keepResultModal);
   }
 
   function openImportPreview() {
