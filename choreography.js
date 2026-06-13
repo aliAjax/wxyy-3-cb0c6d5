@@ -533,7 +533,7 @@ const Choreography = (function () {
         }
 
         return `
-          <div class="tl-track ${trackClass}" style="width: ${widthPercent}%">
+          <div class="tl-track ${trackClass}" data-choreo-item="${escapeHtml(item.id)}" style="width: ${widthPercent}%">
             <div class="tl-track-inner">
               <div class="tl-order">${item.order + 1}</div>
               ${nameHtml}
@@ -627,7 +627,7 @@ const Choreography = (function () {
           }
 
           return `
-            <div class="seq-row ${rowClass}">
+            <div class="seq-row ${rowClass}" data-choreo-item="${escapeHtml(item.id)}">
               <div class="seq-order">${idx + 1}</div>
               <div class="seq-info">
                 ${nameSectionHtml}

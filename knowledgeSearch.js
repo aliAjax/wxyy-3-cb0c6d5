@@ -729,7 +729,7 @@ const KnowledgeSearch = (function () {
           }
 
           setTimeout(() => {
-            const itemEl = document.querySelector(`.choreo-item-row[data-item="${doc.choreoItemId}"]`);
+            const itemEl = document.querySelector(`.seq-row[data-choreo-item="${doc.choreoItemId}"], .tl-track[data-choreo-item="${doc.choreoItemId}"], .choreo-item-row[data-item="${doc.choreoItemId}"]`);
             if (itemEl) {
               scrollToElement(itemEl);
               itemEl.classList.add("ks-highlight-target");
