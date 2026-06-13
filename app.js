@@ -8,6 +8,9 @@ window.__switchMainTab = switchMainTab;
 const actionForm = document.querySelector("#actionForm");
 const frameForm = document.querySelector("#frameForm");
 const mediaInput = document.querySelector("#mediaInput");
+const mediaPreview = document.querySelector("#mediaPreview");
+const mediaPreviewInner = mediaPreview?.querySelector(".media-preview-inner");
+const clearMediaBtn = document.querySelector("#clearMediaBtn");
 const actionList = document.querySelector("#actionList");
 const mediaBox = document.querySelector("#mediaBox");
 const timeline = document.querySelector("#timeline");
@@ -37,7 +40,20 @@ const annotationVideoInfo = document.querySelector("#annotationVideoInfo");
 const annotationTimestamp = document.querySelector("#annotationTimestamp");
 const deleteAnnotationBtn = document.querySelector("#deleteAnnotationBtn");
 
+const editMediaInput = document.querySelector("#editMediaInput");
+const editMediaPreview = document.querySelector("#editMediaPreview");
+const editMediaPreviewInner = editMediaPreview?.querySelector(".media-preview-inner");
+const editClearMediaBtn = document.querySelector("#editClearMediaBtn");
+
+const mediaLibraryModal = document.querySelector("#mediaLibraryModal");
+const mediaLibraryGrid = document.querySelector("#mediaLibraryGrid");
+const storageInfoEl = document.querySelector("#storageInfo");
+const mediaLibWarnings = document.querySelector("#mediaLibWarnings");
+const cleanupOrphanBtn = document.querySelector("#cleanupOrphanBtn");
+const toastContainer = document.querySelector("#toastContainer");
+
 let pendingMedia = null;
+let pendingEditMedia = null;
 let timerInterval = null;
 let metronomeAudio = null;
 let metronomeInterval = null;
@@ -48,6 +64,26 @@ let editingAnnotationId = null;
 let draggingAnnotationId = null;
 let dragOffset = { x: 0, y: 0 };
 
+function showToast(message, type = "info", duration = 3000) {
+  if (!toastContainer) return;
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  toastContainer.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translateY(-10px)";
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
+}
+
+function formatSize(bytes) {
+  if (!bytes || bytes < 1024) return `${bytes || 0} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
 function save() {
   localStorage.setItem(storageKey, JSON.stringify(state));
 }
@@ -55,6 +91,36 @@ function save() {
 if (!Array.isArray(state.scores)) {
   state.scores = [];
   save();
+}
+
+function getActionMediaId(action) {
+  if (!action) return null;
+  return action.mediaId || (action.mediaRef && action.mediaRef.id) || (action.media && action.media.id) || null;
+}
+
+function getActionMediaRef(action) {
+  if (!action) return null;
+  if (action.mediaRef) return action.mediaRef;
+  if (action.mediaId) return { id: action.mediaId };
+  if (action.media && action.media.id) return { id: action.media.id, type: action.media.type };
+  return null;
+}
+
+function setActionMediaRef(action, mediaMeta) {
+  if (!action) return;
+  if (mediaMeta) {
+    action.mediaId = mediaMeta.id;
+    action.mediaRef = {
+      id: mediaMeta.id,
+      type: mediaMeta.type,
+      name: mediaMeta.name,
+      thumbnail: mediaMeta.thumbnail || null
+    };
+  } else {
+    delete action.mediaId;
+    delete action.mediaRef;
+  }
+  delete action.media;
 }
 
 function activeAction() {
@@ -152,7 +218,11 @@ function getCurrentMediaElement() {
 
 function isVideoMedia() {
   const action = activeAction();
-  return action?.media?.type?.startsWith("video/") || false;
+  if (!action) return false;
+  const ref = getActionMediaRef(action);
+  if (ref?.type) return MediaLibrary.isVideoType(ref.type);
+  if (action.media?.type) return MediaLibrary.isVideoType(action.media.type);
+  return false;
 }
 
 function getCurrentVideoTime() {
@@ -390,18 +460,28 @@ function bindVideoAnnotationSync() {
   const video = mediaBox.querySelector("video");
   if (!video) return;
   video.addEventListener("timeupdate", renderAnnotations);
-  video.addEventListener("pause", () => {
-    const hint = document.createElement("div");
-  });
 }
 
 function readMedia(file) {
   return new Promise((resolve) => {
     if (!file) return resolve(null);
     const reader = new FileReader();
-    reader.addEventListener("load", () => resolve({ src: reader.result, type: file.type }));
+    reader.addEventListener("load", () => resolve({ src: reader.result, type: file.type, file: file }));
     reader.readAsDataURL(file);
   });
+}
+
+function renderLocalMediaPreview(container, data, isVideo) {
+  if (!container) return;
+  if (!data) {
+    container.innerHTML = "";
+    return;
+  }
+  if (isVideo) {
+    container.innerHTML = `<video src="${data}" controls muted preload="metadata"></video>`;
+  } else {
+    container.innerHTML = `<img src="${data}" alt="预览">`;
+  }
 }
 
 function formatDuration(secs) {
@@ -444,8 +524,14 @@ function renderList() {
     const refBadge = choreoRefs?.hasReferences
       ? `<span class="action-ref-badge" title="被 ${choreoRefs.references.length} 个编排引用">📋 ${choreoRefs.references.length}</span>`
       : "";
+    const mediaRef = getActionMediaRef(action);
+    const thumb = mediaRef?.thumbnail;
+    const thumbHtml = thumb
+      ? `<div class="action-item-thumb"><img src="${thumb}" alt=""></div>`
+      : (mediaRef ? `<div class="action-item-thumb placeholder">${MediaLibrary.isVideoType(mediaRef.type) ? "🎬" : "🖼"}</div>` : "");
     return `
       <div class="action-item-wrapper">
+        ${thumbHtml}
         <button class="action-item ${action.id === state.activeId ? "active" : ""}" type="button" data-action="${action.id}">
           <div class="action-item-head">
             <strong>${escapeHtml(action.name)}</strong>
@@ -515,12 +601,12 @@ function renderActionHistory() {
         <span>${formatDuration(s.duration)} · ${s.tempoBPM || "-"} BPM</span>
         <span>${s.selectedFrameIds.length}帧</span>
       </div>
-      ${s.reviewNote ? `<p class="h-note">${s.reviewNote}</p>` : ""}
+      ${s.reviewNote ? `<p class="h-note">${escapeHtml(s.reviewNote)}</p>` : ""}
     </article>
   `).join("");
 }
 
-function renderDetail() {
+async function renderDetail() {
   const action = activeAction();
   if (!action) {
     mediaBox.innerHTML = `<p>选择或新建一个水袖动作</p><div class="annotation-layer" id="annotationLayer"></div>`;
@@ -541,28 +627,53 @@ function renderDetail() {
   const existingLayer = mediaBox.querySelector(".annotation-layer");
   if (existingLayer) existingLayer.remove();
 
-  if (action.media?.src) {
-    const isVideo = action.media.type.startsWith("video/");
-    const mediaHtml = isVideo
-      ? `<video src="${action.media.src}" controls preload="metadata"></video>`
-      : `<img src="${action.media.src}" alt="${action.name}练习素材">`;
-    mediaBox.innerHTML = mediaHtml;
-    mediaBox.appendChild(annotationLayer);
-    const mediaEl = mediaBox.querySelector("img, video");
-    if (mediaEl) {
-      const rerender = () => renderAnnotations();
-      if (isVideo) {
-        bindVideoAnnotationSync();
-        mediaEl.addEventListener("loadedmetadata", rerender);
-        mediaEl.addEventListener("seeked", rerender);
-      } else {
-        if (mediaEl.complete) {
-          setTimeout(rerender, 0);
-        } else {
-          mediaEl.addEventListener("load", rerender);
-        }
+  const mediaId = getActionMediaId(action);
+  const mediaRef = getActionMediaRef(action);
+  const hasLegacyMedia = action.media && action.media.src && typeof action.media.src === "string" && action.media.src.startsWith("data:");
+
+  if (mediaId || hasLegacyMedia) {
+    let mediaSrc = null;
+    let mediaType = null;
+
+    if (hasLegacyMedia) {
+      mediaSrc = action.media.src;
+      mediaType = action.media.type;
+    } else if (mediaId) {
+      try {
+        mediaSrc = await MediaLibrary.getMediaDataURL(mediaId);
+        const m = await MediaLibrary.getMedia(mediaId);
+        mediaType = m?.type || (mediaRef && mediaRef.type);
+      } catch {
+        mediaSrc = null;
       }
-      mediaEl.addEventListener("resize", rerender);
+    }
+
+    if (mediaSrc) {
+      const isVideo = MediaLibrary.isVideoType(mediaType);
+      const mediaHtml = isVideo
+        ? `<video src="${mediaSrc}" controls preload="metadata"></video>`
+        : `<img src="${mediaSrc}" alt="${action.name}练习素材">`;
+      mediaBox.innerHTML = mediaHtml;
+      mediaBox.appendChild(annotationLayer);
+      const mediaEl = mediaBox.querySelector("img, video");
+      if (mediaEl) {
+        const rerender = () => renderAnnotations();
+        if (isVideo) {
+          bindVideoAnnotationSync();
+          mediaEl.addEventListener("loadedmetadata", rerender);
+          mediaEl.addEventListener("seeked", rerender);
+        } else {
+          if (mediaEl.complete) {
+            setTimeout(rerender, 0);
+          } else {
+            mediaEl.addEventListener("load", rerender);
+          }
+        }
+        mediaEl.addEventListener("resize", rerender);
+      }
+    } else {
+      mediaBox.innerHTML = `<p class="media-missing">素材加载失败或已被清理</p>`;
+      mediaBox.appendChild(annotationLayer);
     }
   } else {
     mediaBox.innerHTML = `<p>${action.name}还没有上传练习素材</p>`;
@@ -822,14 +933,14 @@ function bindPracticePanelEvents() {
       sess.reviewNote = reviewInput.value.trim();
       save();
       renderAll();
-      alert("复盘已保存");
+      showToast("复盘已保存", "success");
     });
   }
 }
 
-function renderAll() {
+async function renderAll() {
   renderList();
-  renderDetail();
+  await renderDetail();
   renderSessionsList();
   renderPracticePanel();
   populateSessionActionSelect();
@@ -851,6 +962,32 @@ function openActionEditModal(actionId) {
   document.querySelector("#editActionName").value = action.name;
   document.querySelector("#editActionTags").value = action.tags || "";
   document.querySelector("#editActionId").value = action.id;
+
+  pendingEditMedia = null;
+  if (editMediaInput) editMediaInput.value = "";
+  if (editMediaPreview && editMediaPreviewInner) {
+    const ref = getActionMediaRef(action);
+    if (ref) {
+      editMediaPreview.hidden = false;
+      if (ref.thumbnail) {
+        editMediaPreviewInner.innerHTML = `<img src="${ref.thumbnail}" alt="缩略图">`;
+      } else {
+        const typeIcon = MediaLibrary.isVideoType(ref.type) ? "🎬" : "🖼";
+        editMediaPreviewInner.innerHTML = `<div class="preview-placeholder">${typeIcon}<span>${escapeHtml(ref.name || "已有素材")}</span></div>`;
+      }
+    } else if (action.media && action.media.src) {
+      editMediaPreview.hidden = false;
+      const isVideo = MediaLibrary.isVideoType(action.media.type);
+      if (isVideo) {
+        editMediaPreviewInner.innerHTML = `<video src="${action.media.src}" muted preload="metadata"></video>`;
+      } else {
+        editMediaPreviewInner.innerHTML = `<img src="${action.media.src}" alt="缩略图">`;
+      }
+    } else {
+      editMediaPreview.hidden = true;
+      editMediaPreviewInner.innerHTML = "";
+    }
+  }
 
   const choreoRefs = window.Choreography?.checkActionReferences(actionId);
   const refWarning = document.querySelector("#editActionRefWarning");
@@ -876,9 +1013,10 @@ function openActionEditModal(actionId) {
 function closeActionEditModal() {
   const modal = document.querySelector("#actionEditModal");
   if (modal) modal.hidden = true;
+  pendingEditMedia = null;
 }
 
-function updateActionFromModal() {
+async function updateActionFromModal() {
   const actionId = document.querySelector("#editActionId").value;
   const newName = document.querySelector("#editActionName").value.trim();
   const newTags = document.querySelector("#editActionTags").value.trim();
@@ -896,12 +1034,41 @@ function updateActionFromModal() {
   action.tags = newTags;
   action.updatedAt = new Date().toISOString();
 
+  if (pendingEditMedia !== null) {
+    const oldMediaId = getActionMediaId(action);
+    if (pendingEditMedia === false) {
+      setActionMediaRef(action, null);
+      if (oldMediaId) {
+        await MediaLibrary.deleteMedia(oldMediaId);
+      }
+    } else {
+      try {
+        const file = pendingEditMedia.file || pendingEditMedia;
+        const saved = await MediaLibrary.addMedia(file, pendingEditMedia.type, `${newName}素材`);
+        setActionMediaRef(action, saved);
+        if (oldMediaId && oldMediaId !== saved.id) {
+          await MediaLibrary.deleteMedia(oldMediaId);
+        }
+        showToast("素材已更新", "success");
+      } catch (err) {
+        const storageInfo = await MediaLibrary.getStorageInfo();
+        if (storageInfo.usageRatio > 0.9) {
+          showToast(`存储容量不足（已使用 ${(storageInfo.usageRatio * 100).toFixed(0)}%），素材保存失败，请清理空间后重试`, "error", 5000);
+        } else {
+          showToast("素材保存失败：" + (err.message || err), "error");
+        }
+        return;
+      }
+    }
+  }
+
   save();
+  await MediaLibrary.syncUsedByReferences(state);
   closeActionEditModal();
-  renderAll();
+  await renderAll();
 }
 
-function deleteActionWithCheck(actionId) {
+async function deleteActionWithCheck(actionId) {
   const action = state.actions.find((a) => a.id === actionId);
   if (!action) return;
 
@@ -914,6 +1081,8 @@ function deleteActionWithCheck(actionId) {
   }
 
   if (!confirm(confirmMsg)) return;
+
+  const mediaId = getActionMediaId(action);
 
   state.actions = state.actions.filter((a) => a.id !== actionId);
   if (state.activeId === actionId) {
@@ -936,8 +1105,12 @@ function deleteActionWithCheck(actionId) {
     state.scores = state.scores.filter((s) => s.actionId !== actionId);
   }
 
+  if (mediaId) {
+    await MediaLibrary.deleteMedia(mediaId);
+  }
+
   save();
-  renderAll();
+  await renderAll();
 }
 
 function openSessionModal() {
@@ -1102,31 +1275,102 @@ sessionForm.addEventListener("submit", (e) => {
 });
 
 mediaInput.addEventListener("change", async () => {
-  pendingMedia = await readMedia(mediaInput.files[0]);
+  const file = mediaInput.files[0];
+  if (!file) {
+    pendingMedia = null;
+    if (mediaPreview) mediaPreview.hidden = true;
+    if (mediaPreviewInner) mediaPreviewInner.innerHTML = "";
+    return;
+  }
+  pendingMedia = { file: file, type: file.type, name: file.name };
+  const isVideo = MediaLibrary.isVideoType(file.type);
+  const data = await readMedia(file);
+  if (mediaPreview && mediaPreviewInner) {
+    renderLocalMediaPreview(mediaPreviewInner, data?.src, isVideo);
+    mediaPreview.hidden = false;
+  }
 });
+
+if (clearMediaBtn) {
+  clearMediaBtn.addEventListener("click", () => {
+    pendingMedia = null;
+    mediaInput.value = "";
+    if (mediaPreview) mediaPreview.hidden = true;
+    if (mediaPreviewInner) mediaPreviewInner.innerHTML = "";
+  });
+}
+
+if (editMediaInput) {
+  editMediaInput.addEventListener("change", async () => {
+    const file = editMediaInput.files[0];
+    if (!file) {
+      pendingEditMedia = null;
+      return;
+    }
+    pendingEditMedia = { file: file, type: file.type, name: file.name };
+    const isVideo = MediaLibrary.isVideoType(file.type);
+    const data = await readMedia(file);
+    if (editMediaPreview && editMediaPreviewInner) {
+      renderLocalMediaPreview(editMediaPreviewInner, data?.src, isVideo);
+      editMediaPreview.hidden = false;
+    }
+  });
+}
+
+if (editClearMediaBtn) {
+  editClearMediaBtn.addEventListener("click", () => {
+    pendingEditMedia = false;
+    if (editMediaInput) editMediaInput.value = "";
+    if (editMediaPreview && editMediaPreviewInner) {
+      editMediaPreviewInner.innerHTML = `<div class="preview-placeholder">✕<span>将移除素材</span></div>`;
+      editMediaPreview.hidden = false;
+    }
+  });
+}
 
 actionForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = new FormData(actionForm);
-  if (!pendingMedia && mediaInput.files[0]) {
-    pendingMedia = await readMedia(mediaInput.files[0]);
+  let savedMedia = null;
+
+  if (pendingMedia) {
+    try {
+      const file = pendingMedia.file || pendingMedia;
+      savedMedia = await MediaLibrary.addMedia(file, pendingMedia.type, `${data.get("name").trim() || "新动作"}素材`);
+    } catch (err) {
+      const storageInfo = await MediaLibrary.getStorageInfo();
+      if (storageInfo.usageRatio > 0.9) {
+        alert(`存储容量不足（已使用 ${(storageInfo.usageRatio * 100).toFixed(0)}%），素材保存失败，请清理空间后重试。`);
+      } else {
+        alert("素材保存失败：" + (err.message || err));
+      }
+      return;
+    }
   }
+
   const action = {
     id: crypto.randomUUID(),
     name: data.get("name").trim(),
     tags: data.get("tags").trim(),
-    media: pendingMedia,
     frames: [],
     annotations: [],
     createdAt: new Date().toISOString()
   };
+
+  if (savedMedia) {
+    setActionMediaRef(action, savedMedia);
+  }
+
   state.actions.unshift(action);
   state.activeId = action.id;
   pendingMedia = null;
   mediaInput.value = "";
+  if (mediaPreview) mediaPreview.hidden = true;
+  if (mediaPreviewInner) mediaPreviewInner.innerHTML = "";
   actionForm.reset();
   save();
-  renderAll();
+  await MediaLibrary.syncUsedByReferences(state);
+  await renderAll();
 });
 
 frameForm.addEventListener("submit", (event) => {
@@ -1148,7 +1392,7 @@ frameForm.addEventListener("submit", (event) => {
   renderAll();
 });
 
-actionList.addEventListener("click", (event) => {
+actionList.addEventListener("click", async (event) => {
   const editId = event.target.closest("[data-edit-action]")?.dataset.editAction;
   const deleteId = event.target.closest("[data-delete-action]")?.dataset.deleteAction;
   const actionId = event.target.closest("[data-action]")?.dataset.action;
@@ -1160,13 +1404,13 @@ actionList.addEventListener("click", (event) => {
   }
   if (deleteId) {
     event.stopPropagation();
-    deleteActionWithCheck(deleteId);
+    await deleteActionWithCheck(deleteId);
     return;
   }
   if (actionId) {
     state.activeId = actionId;
     save();
-    renderAll();
+    await renderAll();
   }
 });
 
@@ -1188,9 +1432,15 @@ document.querySelector("#newActionBtn").addEventListener("click", () => {
 
 tagFilter.addEventListener("input", renderList);
 
-addAnnotationBtn.addEventListener("click", () => {
+addAnnotationBtn.addEventListener("click", async () => {
   const action = activeAction();
-  if (!action || !action.media?.src) {
+  if (!action) {
+    alert("请先选择一个动作并上传练习图片或视频");
+    return;
+  }
+  const mediaId = getActionMediaId(action);
+  const hasLegacy = action.media && action.media.src;
+  if (!mediaId && !hasLegacy) {
     alert("请先选择一个动作并上传练习图片或视频");
     return;
   }
@@ -1245,28 +1495,181 @@ if (actionEditModal) {
 
 const actionEditForm = document.querySelector("#actionEditForm");
 if (actionEditForm) {
-  actionEditForm.addEventListener("submit", (e) => {
+  actionEditForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    updateActionFromModal();
+    await updateActionFromModal();
   });
 }
 
-if (window.Choreography) {
-  window.Choreography.init(state.choreographies || []);
-  const changes = window.Choreography.detectActionChanges();
-  if (changes.length > 0) {
-    const deleted = changes.filter((c) => c.type === "deleted").length;
-    const renamed = changes.filter((c) => c.type === "renamed").length;
-    let msg = "检测到动作数据变化：\n";
-    if (deleted > 0) msg += `• ${deleted} 个动作已被删除\n`;
-    if (renamed > 0) msg += `• ${renamed} 个动作已改名\n`;
-    msg += "\n编排页面会显示相应提示。";
-    console.log(msg);
+async function openMediaLibrary() {
+  if (!mediaLibraryModal) return;
+  mediaLibraryModal.hidden = false;
+  await renderMediaLibrary();
+}
+
+function closeMediaLibrary() {
+  if (mediaLibraryModal) mediaLibraryModal.hidden = true;
+}
+
+async function renderMediaLibrary() {
+  const allMedia = await MediaLibrary.getAllMedia();
+  const storageInfo = await MediaLibrary.getStorageInfo();
+  const usedIds = new Set(MediaLibrary.getUsedMediaIds(state));
+
+  if (storageInfoEl) {
+    const pct = storageInfo.quota ? ((storageInfo.used / storageInfo.quota) * 100).toFixed(1) : 0;
+    storageInfoEl.innerHTML = `<span>已用 ${formatSize(storageInfo.used)}</span>${storageInfo.quota ? `<span> / ${formatSize(storageInfo.quota)} (${pct}%)</span>` : ""}`;
+    if (storageInfo.usageRatio > 0.9) {
+      storageInfoEl.classList.add("warning");
+    } else {
+      storageInfoEl.classList.remove("warning");
+    }
+  }
+
+  const orphanCount = allMedia.filter((m) => !usedIds.has(m.id)).length;
+  if (mediaLibWarnings) {
+    const warnings = [];
+    if (storageInfo.usageRatio > 0.9) {
+      warnings.push(`<div class="media-lib-warning danger">⚠ 存储容量警告：已使用 ${(storageInfo.usageRatio * 100).toFixed(0)}%，请及时清理不需要的素材</div>`);
+    }
+    if (orphanCount > 0) {
+      warnings.push(`<div class="media-lib-warning info">ℹ 发现 ${orphanCount} 个孤立素材（未被任何动作引用），可点击清理按钮释放空间</div>`);
+    }
+    if (warnings.length) {
+      mediaLibWarnings.innerHTML = warnings.join("");
+      mediaLibWarnings.hidden = false;
+    } else {
+      mediaLibWarnings.innerHTML = "";
+      mediaLibWarnings.hidden = true;
+    }
+  }
+
+  if (mediaLibraryGrid) {
+    if (!allMedia.length) {
+      mediaLibraryGrid.innerHTML = `<div class="media-lib-empty"><p>素材库为空</p><p class="muted">上传动作时，素材会自动保存到此处</p></div>`;
+      return;
+    }
+
+    const sorted = [...allMedia].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    mediaLibraryGrid.innerHTML = sorted.map((m) => {
+      const isOrphan = !usedIds.has(m.id);
+      const isVideo = MediaLibrary.isVideoType(m.type);
+      const thumb = m.thumbnail;
+      let thumbHtml = "";
+      if (thumb) {
+        thumbHtml = `<img src="${thumb}" alt="">`;
+      } else if (isVideo) {
+        thumbHtml = `<div class="lib-thumb-placeholder video">🎬</div>`;
+      } else {
+        thumbHtml = `<div class="lib-thumb-placeholder image">🖼</div>`;
+      }
+
+      const usedByCount = m.usedBy?.length || 0;
+      return `
+        <div class="lib-media-card ${isOrphan ? "orphan" : ""}" data-media="${m.id}">
+          <div class="lib-media-thumb">
+            ${thumbHtml}
+            ${isOrphan ? `<span class="orphan-badge">孤立</span>` : ""}
+            ${usedByCount > 0 ? `<span class="used-badge">${usedByCount} 引用</span>` : ""}
+          </div>
+          <div class="lib-media-info">
+            <div class="lib-media-name" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</div>
+            <div class="lib-media-meta">
+              <span>${formatSize(m.size)}</span>
+              <span>${isVideo ? "视频" : "图片"}</span>
+            </div>
+          </div>
+          <div class="lib-media-actions">
+            <button type="button" class="btn-small btn-danger" data-delete-media="${m.id}">删除</button>
+          </div>
+        </div>
+      `;
+    }).join("");
   }
 }
 
-if (window.ReviewScoring) {
-  window.ReviewScoring.init();
-}
+mediaLibraryGrid?.addEventListener("click", async (e) => {
+  const deleteId = e.target.closest("[data-delete-media]")?.dataset.deleteMedia;
+  if (deleteId) {
+    const usedIds = new Set(MediaLibrary.getUsedMediaIds(state));
+    const isOrphan = !usedIds.has(deleteId);
+    let msg = "确定删除该素材？";
+    if (!isOrphan) {
+      msg = "该素材正在被动作引用，删除后动作中的素材将无法显示。\n" + msg;
+    }
+    if (!confirm(msg)) return;
+    await MediaLibrary.deleteMedia(deleteId);
+    if (!isOrphan) {
+      state.actions.forEach((action) => {
+        if (action.mediaId === deleteId) {
+          delete action.mediaId;
+          delete action.mediaRef;
+        }
+        if (action.mediaRef && action.mediaRef.id === deleteId) {
+          delete action.mediaRef;
+        }
+      });
+      save();
+      await renderAll();
+    }
+    await renderMediaLibrary();
+    showToast("素材已删除", "success");
+  }
+});
 
-renderAll();
+cleanupOrphanBtn?.addEventListener("click", async () => {
+  const orphans = await MediaLibrary.findOrphanedMedia(state);
+  if (!orphans.length) {
+    showToast("没有找到孤立素材", "info");
+    return;
+  }
+  if (!confirm(`确定清理 ${orphans.length} 个孤立素材？此操作不可恢复。`)) return;
+  const deleted = await MediaLibrary.cleanupOrphanedMedia(state);
+  showToast(`已清理 ${deleted.length} 个孤立素材`, "success");
+  await renderMediaLibrary();
+});
+
+mediaLibraryModal?.addEventListener("click", (e) => {
+  if (e.target.hasAttribute("data-close-media-lib") || e.target === mediaLibraryModal) {
+    closeMediaLibrary();
+  }
+});
+
+document.querySelector("#openMediaLibraryBtn")?.addEventListener("click", openMediaLibrary);
+
+(async function bootstrap() {
+  const libOk = await MediaLibrary.init();
+  if (!libOk) {
+    console.warn("素材库不可用，部分功能受限");
+  }
+
+  const result = await MediaLibrary.migrateFromLocalStorage(state);
+  if (result.migrated > 0) {
+    save();
+    await MediaLibrary.syncUsedByReferences(state);
+    showToast(`已迁移 ${result.migrated} 个素材到离线素材库`, "success", 4000);
+  }
+  if (result.failed > 0) {
+    showToast(`${result.failed} 个素材迁移失败，原始数据已保留，刷新页面将重试`, "warning", 6000);
+  }
+
+  if (window.Choreography) {
+    window.Choreography.init(state.choreographies || []);
+    const changes = window.Choreography.detectActionChanges();
+    if (changes.length > 0) {
+      const deleted = changes.filter((c) => c.type === "deleted").length;
+      const renamed = changes.filter((c) => c.type === "renamed").length;
+      let msg = "检测到动作数据变化：\n";
+      if (deleted > 0) msg += `• ${deleted} 个动作已被删除\n`;
+      if (renamed > 0) msg += `• ${renamed} 个动作已改名\n`;
+      msg += "\n编排页面会显示相应提示。";
+      console.log(msg);
+    }
+  }
+
+  if (window.ReviewScoring) {
+    window.ReviewScoring.init();
+  }
+
+  await renderAll();
+})();

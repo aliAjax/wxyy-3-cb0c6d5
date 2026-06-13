@@ -18,6 +18,7 @@
       <div class="head-btns">
         <button id="newActionBtn" type="button">新建动作</button>
         <button id="openSessionsBtn" type="button" class="btn-secondary">练习课次</button>
+        <button id="openMediaLibraryBtn" type="button" class="btn-secondary">素材库</button>
       </div>
     </header>
 
@@ -34,7 +35,13 @@
             <h2>动作条目</h2>
             <label>动作名称<input name="name" required placeholder="如：抛袖接转身"></label>
             <label>标签<input name="tags" placeholder="圆场,亮相,慢板"></label>
-            <label>练习视频或照片<input id="mediaInput" type="file" accept="image/*,video/*"></label>
+            <label>练习视频或照片
+              <input id="mediaInput" type="file" accept="image/*,video/*">
+            </label>
+            <div id="mediaPreview" class="media-preview" hidden>
+              <div class="media-preview-inner"></div>
+              <button type="button" id="clearMediaBtn" class="btn-small btn-danger media-clear-btn">移除</button>
+            </div>
             <button type="submit">保存动作</button>
           </form>
           <label class="filter">标签筛选<input id="tagFilter" placeholder="输入标签"></label>
@@ -259,6 +266,13 @@
             <label>标签
               <input id="editActionTags" name="tags" placeholder="圆场,亮相,慢板">
             </label>
+            <label>替换练习视频或照片
+              <input id="editMediaInput" type="file" accept="image/*,video/*">
+            </label>
+            <div id="editMediaPreview" class="media-preview edit-media-preview" hidden>
+              <div class="media-preview-inner"></div>
+              <button type="button" id="editClearMediaBtn" class="btn-small btn-danger media-clear-btn">移除</button>
+            </div>
             <div id="editActionRefWarning" class="choreo-timeline-warnings" hidden></div>
             <div class="modal-actions">
               <button type="button" class="btn-secondary" data-close-action-edit>取消</button>
@@ -319,7 +333,27 @@
         </div>
       </div>
     </div>
+
+    <div class="modal-mask" id="mediaLibraryModal" hidden>
+      <div class="modal media-library-modal">
+        <header class="modal-head">
+          <h3>离线素材库</h3>
+          <div class="media-lib-head-actions">
+            <div id="storageInfo" class="storage-info"></div>
+            <button type="button" id="cleanupOrphanBtn" class="btn-small btn-secondary">清理孤立素材</button>
+            <button class="modal-close" type="button" data-close-media-lib>×</button>
+          </div>
+        </header>
+        <div class="modal-body">
+          <div id="mediaLibWarnings" class="media-lib-warnings" hidden></div>
+          <div id="mediaLibraryGrid" class="media-library-grid"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
   </main>
+  <script src="./mediaLibrary.js"></script>
   <script src="./choreography.js"></script>
   <script src="./review.js"></script>
   <script src="./app.js"></script>
