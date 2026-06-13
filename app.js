@@ -113,8 +113,7 @@ function setActionMediaRef(action, mediaMeta) {
     action.mediaRef = {
       id: mediaMeta.id,
       type: mediaMeta.type,
-      name: mediaMeta.name,
-      thumbnail: mediaMeta.thumbnail || null
+      name: mediaMeta.name
     };
   } else {
     delete action.mediaId;
@@ -516,16 +515,27 @@ function switchMainTab(mtab) {
   document.querySelectorAll(".m-tab-panel").forEach((p) => p.classList.toggle("active", p.id === `mtab-${mtab}`));
 }
 
-function renderList() {
+async function renderList() {
   const filter = tagFilter.value.trim();
   const actions = state.actions.filter((action) => !filter || action.tags.includes(filter));
+
+  const thumbCache = {};
+  const mediaIds = [...new Set(actions.map(getActionMediaId).filter(Boolean))];
+  if (mediaIds.length) {
+    await Promise.all(mediaIds.map(async (id) => {
+      const thumb = await MediaLibrary.getMediaThumbnail(id);
+      if (thumb) thumbCache[id] = thumb;
+    }));
+  }
+
   actionList.innerHTML = actions.length ? actions.map((action) => {
     const choreoRefs = window.Choreography?.checkActionReferences(action.id);
     const refBadge = choreoRefs?.hasReferences
       ? `<span class="action-ref-badge" title="被 ${choreoRefs.references.length} 个编排引用">📋 ${choreoRefs.references.length}</span>`
       : "";
     const mediaRef = getActionMediaRef(action);
-    const thumb = mediaRef?.thumbnail;
+    const mediaId = getActionMediaId(action);
+    const thumb = mediaId ? thumbCache[mediaId] : null;
     const thumbHtml = thumb
       ? `<div class="action-item-thumb"><img src="${thumb}" alt=""></div>`
       : (mediaRef ? `<div class="action-item-thumb placeholder">${MediaLibrary.isVideoType(mediaRef.type) ? "🎬" : "🖼"}</div>` : "");
@@ -939,7 +949,7 @@ function bindPracticePanelEvents() {
 }
 
 async function renderAll() {
-  renderList();
+  await renderList();
   await renderDetail();
   renderSessionsList();
   renderPracticePanel();
@@ -952,7 +962,7 @@ async function renderAll() {
   }
 }
 
-function openActionEditModal(actionId) {
+async function openActionEditModal(actionId) {
   const action = state.actions.find((a) => a.id === actionId);
   if (!action) return;
 
@@ -969,8 +979,10 @@ function openActionEditModal(actionId) {
     const ref = getActionMediaRef(action);
     if (ref) {
       editMediaPreview.hidden = false;
-      if (ref.thumbnail) {
-        editMediaPreviewInner.innerHTML = `<img src="${ref.thumbnail}" alt="缩略图">`;
+      const mediaId = getActionMediaId(action);
+      const thumb = mediaId ? await MediaLibrary.getMediaThumbnail(mediaId) : null;
+      if (thumb) {
+        editMediaPreviewInner.innerHTML = `<img src="${thumb}" alt="缩略图">`;
       } else {
         const typeIcon = MediaLibrary.isVideoType(ref.type) ? "🎬" : "🖼";
         editMediaPreviewInner.innerHTML = `<div class="preview-placeholder">${typeIcon}<span>${escapeHtml(ref.name || "已有素材")}</span></div>`;
@@ -1399,7 +1411,7 @@ actionList.addEventListener("click", async (event) => {
 
   if (editId) {
     event.stopPropagation();
-    openActionEditModal(editId);
+    await openActionEditModal(editId);
     return;
   }
   if (deleteId) {
@@ -1430,7 +1442,9 @@ document.querySelector("#newActionBtn").addEventListener("click", () => {
   actionForm.querySelector("input[name='name']").focus();
 });
 
-tagFilter.addEventListener("input", renderList);
+tagFilter.addEventListener("input", async () => {
+  await renderList();
+});
 
 addAnnotationBtn.addEventListener("click", async () => {
   const action = activeAction();

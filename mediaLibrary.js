@@ -291,7 +291,7 @@ const MediaLibrary = (function () {
           action.mediaId = saved.id;
           const type = action.media.type;
           delete action.media;
-          action.mediaRef = { id: saved.id, type: type, name: saved.name, thumbnail: saved.thumbnail };
+          action.mediaRef = { id: saved.id, type: type, name: saved.name };
           results.migrated++;
         } catch (err) {
           results.failed++;
