@@ -923,10 +923,12 @@ const ImportExport = (function () {
     if (fileInput) fileInput.value = "";
   }
 
-  function closeImportPreview() {
+  function closeImportPreview(keepResultModal = false) {
     const modal = document.getElementById("importPreviewModal");
     if (modal) modal.hidden = true;
-    hideImportResultModal();
+    if (!keepResultModal) {
+      hideImportResultModal();
+    }
     resetPreview();
   }
 
@@ -1051,8 +1053,15 @@ const ImportExport = (function () {
     const stateSnapshot = cloneStateSnapshot(appState);
     const importedMediaIds = new Set();
     const idRemap = {};
+    const failedMediaIds = new Set();
+    const importedActionIds = new Set();
 
     try {
+      (currentPreview.media.missing || []).forEach((m) => failedMediaIds.add(m.id));
+      if (!includeMediaChecked) {
+        (currentPreview.media.available || []).forEach((m) => failedMediaIds.add(m.id));
+      }
+
       if (includeMediaChecked && currentPreview.media.available.length) {
         for (const mediaMeta of currentPreview.media.available) {
           try {
@@ -1066,6 +1075,7 @@ const ImportExport = (function () {
               importResult.success.push({ type: "素材", name: mediaMeta.name, status: "新增" });
             }
           } catch (mediaErr) {
+            failedMediaIds.add(mediaMeta.id);
             importResult.failed.push({ type: "素材", name: mediaMeta.name, error: mediaErr.message || mediaErr });
             console.error("素材导入失败:", mediaErr);
           }
@@ -1109,11 +1119,22 @@ const ImportExport = (function () {
             existingActionNames.set(newName.toLowerCase(), actionData);
           }
 
-          if (actionData.mediaId && idRemap[`media:${actionData.mediaId}`]) {
-            actionData.mediaId = idRemap[`media:${actionData.mediaId}`];
+          if (actionData.mediaId) {
+            if (idRemap[`media:${actionData.mediaId}`]) {
+              actionData.mediaId = idRemap[`media:${actionData.mediaId}`];
+            } else if (failedMediaIds.has(actionData.mediaId)) {
+              delete actionData.mediaId;
+              if (actionData.mediaRef) delete actionData.mediaRef;
+              importResult.warnings = importResult.warnings || [];
+              importResult.warnings.push(`动作「${actionData.name}」引用的素材导入失败，已移除素材引用`);
+            }
           }
-          if (actionData.mediaRef && actionData.mediaRef.id && idRemap[`media:${actionData.mediaRef.id}`]) {
-            actionData.mediaRef.id = idRemap[`media:${actionData.mediaRef.id}`];
+          if (actionData.mediaRef && actionData.mediaRef.id) {
+            if (idRemap[`media:${actionData.mediaRef.id}`]) {
+              actionData.mediaRef.id = idRemap[`media:${actionData.mediaRef.id}`];
+            } else if (failedMediaIds.has(actionData.mediaRef.id)) {
+              delete actionData.mediaRef;
+            }
           }
 
           idRemap[`action:${item.data.id}`] = actionData.id;
@@ -1130,13 +1151,16 @@ const ImportExport = (function () {
                 idRemap[`action:${item.data.id}`] = targetId;
               }
               appState.actions[idx] = actionData;
+              importedActionIds.add(actionData.id);
               importResult.success.push({ type: "动作", name: actionData.name, status: "覆盖" });
             } else {
               appState.actions.unshift(actionData);
+              importedActionIds.add(actionData.id);
               importResult.success.push({ type: "动作", name: actionData.name, status: "新增" });
             }
           } else {
             appState.actions.unshift(actionData);
+            importedActionIds.add(actionData.id);
             importResult.success.push({ type: "动作", name: actionData.name, status: isConflictedCopy ? "新增(副本)" : "新增" });
           }
         } catch (actionErr) {
@@ -1183,11 +1207,22 @@ const ImportExport = (function () {
           }
 
           if (Array.isArray(choreoData.items)) {
-            choreoData.items.forEach((choreoItem) => {
-              if (choreoItem.actionId && idRemap[`action:${choreoItem.actionId}`]) {
+            const validLocalActionIds = new Set((appState.actions || []).map((a) => a.id));
+            let removedCount = 0;
+            choreoData.items = choreoData.items.filter((choreoItem) => {
+              if (!choreoItem.actionId) return true;
+              if (idRemap[`action:${choreoItem.actionId}`]) {
                 choreoItem.actionId = idRemap[`action:${choreoItem.actionId}`];
+                return true;
               }
+              if (validLocalActionIds.has(choreoItem.actionId)) return true;
+              removedCount++;
+              return false;
             });
+            if (removedCount > 0) {
+              importResult.warnings = importResult.warnings || [];
+              importResult.warnings.push(`编排「${choreoData.name}」中有 ${removedCount} 个动作引用失效（对应动作导入失败/跳过），已自动移除`);
+            }
           }
 
           const isOverwrite = item.status === ImportStatus.OVERWRITE ||
@@ -1231,8 +1266,22 @@ const ImportExport = (function () {
 
           const scoreData = JSON.parse(JSON.stringify(item.data));
 
+          const validLocalActionIds = new Set((appState.actions || []).map((a) => a.id));
+          let mappedActionId = null;
           if (scoreData.actionId && idRemap[`action:${scoreData.actionId}`]) {
-            scoreData.actionId = idRemap[`action:${scoreData.actionId}`];
+            mappedActionId = idRemap[`action:${scoreData.actionId}`];
+            scoreData.actionId = mappedActionId;
+          } else if (scoreData.actionId && validLocalActionIds.has(scoreData.actionId)) {
+            mappedActionId = scoreData.actionId;
+          }
+
+          if (scoreData.actionId && !mappedActionId) {
+            importResult.skipped.push({
+              type: "评分",
+              name: `动作ID ${scoreData.actionId.slice(0, 8)}...`,
+              reason: "引用的动作导入失败/跳过，评分无法关联"
+            });
+            continue;
           }
 
           if (item.status === ImportStatus.OVERWRITE) {
@@ -1281,7 +1330,7 @@ const ImportExport = (function () {
       lastImportResult = importResult;
       showImportResultModal(importResult);
 
-      closeImportPreview();
+      closeImportPreview(true);
     } catch (err) {
       console.error("导入执行失败，正在回滚:", err);
       try {
