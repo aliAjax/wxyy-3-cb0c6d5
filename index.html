@@ -73,6 +73,7 @@
           <button class="m-tab" type="button" data-mtab="review">复盘评分</button>
           <button class="m-tab" type="button" data-mtab="choreography">编排时间线</button>
           <button class="m-tab" type="button" data-mtab="storyboard">分镜工作台</button>
+          <button class="m-tab" type="button" data-mtab="mirror">镜像训练</button>
         </div>
 
         <div class="m-tab-panel active" id="mtab-detail">
@@ -141,6 +142,70 @@
           <div id="choreographyTimeline" class="choreo-timeline">
             <div class="choreo-timeline-empty">
               <p>从左侧选择一个编排查看时间线</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="m-tab-panel" id="mtab-mirror">
+          <div class="mirror-training-view">
+            <div class="mirror-toolbar">
+              <div class="mirror-toolbar-title">
+                <span class="mirror-icon">🪞</span>
+                <span>左右手镜像训练</span>
+                <span id="mirrorActionName" class="mirror-action-name">未选择动作</span>
+              </div>
+              <div class="mirror-toolbar-controls">
+                <button type="button" id="mirrorToggleBtn" class="btn-small btn-accent">
+                  🔄 开启镜像
+                </button>
+                <button type="button" id="mirrorCompareBtn" class="btn-small btn-secondary">
+                  ⇔ 左右对照
+                </button>
+              </div>
+            </div>
+
+            <div class="mirror-media-section">
+              <div class="mirror-media-wrapper" id="mirrorMediaWrapper">
+                <div class="mirror-media-box" id="mirrorMediaBox">
+                  <p class="mirror-empty-hint">选择一个动作开始镜像训练</p>
+                </div>
+                <div class="mirror-time-marker" id="mirrorTimeMarker" hidden>
+                  <span class="time-marker-line"></span>
+                  <span class="time-marker-label" id="mirrorTimeLabel">00:00</span>
+                </div>
+              </div>
+              <div class="mirror-media-controls">
+                <button type="button" id="mirrorPlayPauseBtn" class="btn-small btn-secondary">
+                  ▶ 播放
+                </button>
+                <button type="button" id="mirrorPauseMarkerBtn" class="btn-small btn-accent">
+                  ⏸ 标记暂停点
+                </button>
+                <button type="button" id="mirrorClearMarkersBtn" class="btn-small btn-secondary">
+                  清除标记
+                </button>
+                <div class="mirror-time-display" id="mirrorTimeDisplay">00:00</div>
+              </div>
+            </div>
+
+            <div class="mirror-frames-section">
+              <div class="mirror-frames-header">
+                <h3>关键帧对照提示</h3>
+                <span class="mirror-frames-count" id="mirrorFramesCount">0 帧</span>
+              </div>
+              <div class="mirror-frames-grid" id="mirrorFramesGrid">
+                <p class="muted mirror-frames-empty">暂无关键帧数据</p>
+              </div>
+            </div>
+
+            <div class="mirror-tips-section">
+              <h4>💡 镜像训练提示</h4>
+              <ul class="mirror-tips-list">
+                <li>开启镜像后，素材将水平翻转，模拟镜中自我练习效果</li>
+                <li>左右对照模式可同时查看原始与镜像版本</li>
+                <li>关键帧中的「左手/右手」「偏左/偏右」描述会自动生成对照提示</li>
+                <li>视频可标记暂停点，方便反复练习关键动作</li>
+              </ul>
             </div>
           </div>
         </div>

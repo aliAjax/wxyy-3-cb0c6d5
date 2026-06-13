@@ -1694,6 +1694,584 @@ mediaLibraryModal?.addEventListener("click", (e) => {
 
 document.querySelector("#openMediaLibraryBtn")?.addEventListener("click", openMediaLibrary);
 
+const MirrorTraining = (function () {
+  let mirrorEnabled = false;
+  let compareMode = false;
+  let pauseMarkers = [];
+  let currentVideoTime = 0;
+
+  const leftRightMap = {
+    "左手": "右手",
+    "右手": "左手",
+    "左": "右",
+    "右": "左",
+    "偏左": "偏右",
+    "偏右": "偏左",
+    "左侧": "右侧",
+    "右侧": "左侧",
+    "左边": "右边",
+    "右边": "左边",
+    "左移": "右移",
+    "右移": "左移",
+    "内旋": "外旋",
+    "外旋": "内旋",
+    "外翻": "内翻",
+    "内翻": "外翻",
+    "顺时针": "逆时针",
+    "逆时针": "顺时针",
+    "左腿": "右腿",
+    "右腿": "左腿",
+    "左肩": "右肩",
+    "右肩": "左肩",
+    "左袖": "右袖",
+    "右袖": "左袖",
+    "上提": "上提",
+    "下压": "下压",
+    "平送": "平送",
+    "向前": "向前",
+    "向后": "向后"
+  };
+
+  function mirrorText(text) {
+    if (!text) return text;
+    let result = text;
+    const sortedKeys = Object.keys(leftRightMap).sort((a, b) => b.length - a.length);
+    const placeholders = {};
+    let counter = 0;
+    sortedKeys.forEach((key) => {
+      if (result.includes(key)) {
+        const placeholder = `__MIRROR_${counter}__`;
+        placeholders[placeholder] = leftRightMap[key];
+        result = result.split(key).join(placeholder);
+        counter++;
+      }
+    });
+    Object.entries(placeholders).forEach(([ph, value]) => {
+      result = result.split(ph).join(value);
+    });
+    return result;
+  }
+
+  function hasDirectionContent(text) {
+    if (!text) return false;
+    return Object.keys(leftRightMap).some((key) => text.includes(key));
+  }
+
+  function getMirrorMediaBox() {
+    return document.querySelector("#mirrorMediaBox");
+  }
+
+  function getMirrorMediaWrapper() {
+    return document.querySelector("#mirrorMediaWrapper");
+  }
+
+  function getMirrorMediaElement() {
+    const box = getMirrorMediaBox();
+    return box ? box.querySelector("img, video") : null;
+  }
+
+  function getMirrorVideo() {
+    const box = getMirrorMediaBox();
+    return box ? box.querySelector("video") : null;
+  }
+
+  function isMirrorVideo() {
+    const action = activeAction();
+    if (!action) return false;
+    const ref = getActionMediaRef(action);
+    if (ref?.type) return MediaLibrary.isVideoType(ref.type);
+    if (action.media?.type) return MediaLibrary.isVideoType(action.media.type);
+    return false;
+  }
+
+  function toggleMirror() {
+    mirrorEnabled = !mirrorEnabled;
+    const btn = document.querySelector("#mirrorToggleBtn");
+    const box = getMirrorMediaBox();
+
+    if (btn) {
+      btn.textContent = mirrorEnabled ? "🔄 关闭镜像" : "🔄 开启镜像";
+      btn.classList.toggle("btn-accent", !mirrorEnabled);
+      btn.classList.toggle("btn-secondary", mirrorEnabled);
+    }
+    if (box) {
+      box.classList.toggle("mirrored", mirrorEnabled);
+    }
+    updateCompareLabels();
+    renderMirrorFrames();
+    showToast(mirrorEnabled ? "镜像模式已开启" : "镜像模式已关闭", "info", 1500);
+  }
+
+  function toggleCompareMode() {
+    compareMode = !compareMode;
+    const btn = document.querySelector("#mirrorCompareBtn");
+    const wrapper = getMirrorMediaWrapper();
+    const box = getMirrorMediaBox();
+
+    if (btn) {
+      btn.textContent = compareMode ? "⇔ 退出对照" : "⇔ 左右对照";
+      btn.classList.toggle("btn-accent", compareMode);
+      btn.classList.toggle("btn-secondary", !compareMode);
+    }
+
+    renderMirrorMedia();
+    showToast(compareMode ? "左右对照模式已开启" : "已退出左右对照模式", "info", 1500);
+  }
+
+  function updateCompareLabels() {
+    const labels = document.querySelectorAll(".mirror-compare-label");
+    labels.forEach((label) => {
+      const isMirrored = label.parentElement.classList.contains("mirrored");
+      label.textContent = isMirrored ? "镜像视图" : "原始视图";
+    });
+  }
+
+  async function renderMirrorMedia() {
+    const action = activeAction();
+    const box = getMirrorMediaBox();
+    if (!box) return;
+
+    if (!action) {
+      box.innerHTML = '<p class="mirror-empty-hint">选择一个动作开始镜像训练</p>';
+      return;
+    }
+
+    const mediaId = getActionMediaId(action);
+    const mediaRef = getActionMediaRef(action);
+    const hasLegacyMedia = action.media && action.media.src && typeof action.media.src === "string" && action.media.src.startsWith("data:");
+
+    if (!mediaId && !hasLegacyMedia) {
+      box.innerHTML = `<p class="mirror-empty-hint">${escapeHtml(action.name)}还没有上传练习素材</p>`;
+      return;
+    }
+
+    let mediaSrc = null;
+    let mediaType = null;
+
+    if (hasLegacyMedia) {
+      mediaSrc = action.media.src;
+      mediaType = action.media.type;
+    } else if (mediaId) {
+      try {
+        mediaSrc = await MediaLibrary.getMediaDataURL(mediaId);
+        const m = await MediaLibrary.getMedia(mediaId);
+        mediaType = m?.type || (mediaRef && mediaRef.type);
+      } catch {
+        mediaSrc = null;
+      }
+    }
+
+    if (!mediaSrc) {
+      box.innerHTML = '<p class="mirror-empty-hint">素材加载失败或已被清理</p>';
+      return;
+    }
+
+    const isVideo = MediaLibrary.isVideoType(mediaType);
+    box.classList.toggle("mirrored", mirrorEnabled && !compareMode);
+
+    if (compareMode) {
+      renderCompareMode(mediaSrc, isVideo);
+    } else {
+      renderSingleMode(mediaSrc, isVideo);
+    }
+
+    bindMirrorMediaEvents();
+    updateMirrorControlsVisibility();
+  }
+
+  function renderSingleMode(mediaSrc, isVideo) {
+    const box = getMirrorMediaBox();
+    const mediaHtml = isVideo
+      ? `<video src="${mediaSrc}" controls preload="metadata"></video>`
+      : `<img src="${mediaSrc}" alt="练习素材">`;
+    box.innerHTML = mediaHtml;
+  }
+
+  function renderCompareMode(mediaSrc, isVideo) {
+    const box = getMirrorMediaBox();
+    const mediaTag = isVideo
+      ? `<video src="${mediaSrc}" preload="metadata"></video>`
+      : `<img src="${mediaSrc}" alt="练习素材">`;
+
+    box.innerHTML = `
+      <div class="mirror-compare-container">
+        <div class="mirror-compare-item original">
+          <span class="mirror-compare-label">原始视图</span>
+          ${mediaTag}
+        </div>
+        <div class="mirror-compare-item mirrored">
+          <span class="mirror-compare-label">镜像视图</span>
+          ${mediaTag}
+        </div>
+      </div>
+    `;
+
+    if (isVideo) {
+      const videos = box.querySelectorAll("video");
+      const masterVideo = videos[0];
+      const slaveVideo = videos[1];
+
+      masterVideo.addEventListener("timeupdate", () => {
+        if (Math.abs(masterVideo.currentTime - slaveVideo.currentTime) > 0.1) {
+          slaveVideo.currentTime = masterVideo.currentTime;
+        }
+        currentVideoTime = masterVideo.currentTime;
+        updateTimeDisplay();
+        checkPauseMarkers();
+      });
+
+      masterVideo.addEventListener("play", () => {
+        slaveVideo.play().catch(() => {});
+        updatePlayPauseButton(false);
+      });
+
+      masterVideo.addEventListener("pause", () => {
+        slaveVideo.pause();
+        updatePlayPauseButton(true);
+      });
+
+      masterVideo.addEventListener("seeked", () => {
+        slaveVideo.currentTime = masterVideo.currentTime;
+      });
+
+      masterVideo.controls = false;
+      slaveVideo.controls = false;
+    }
+  }
+
+  function bindMirrorMediaEvents() {
+    const video = getMirrorVideo();
+    if (video && !compareMode) {
+      video.addEventListener("timeupdate", () => {
+        currentVideoTime = video.currentTime;
+        updateTimeDisplay();
+        checkPauseMarkers();
+      });
+      video.addEventListener("play", () => updatePlayPauseButton(false));
+      video.addEventListener("pause", () => updatePlayPauseButton(true));
+    }
+    renderMarkers();
+  }
+
+  function updateTimeDisplay() {
+    const display = document.querySelector("#mirrorTimeDisplay");
+    if (display) {
+      display.textContent = formatDuration(currentVideoTime);
+    }
+  }
+
+  function updatePlayPauseButton(paused) {
+    const btn = document.querySelector("#mirrorPlayPauseBtn");
+    if (btn) {
+      btn.textContent = paused ? "▶ 播放" : "⏸ 暂停";
+    }
+  }
+
+  function togglePlayPause() {
+    const video = getMirrorVideo();
+    if (!video && compareMode) {
+      const videos = getMirrorMediaBox()?.querySelectorAll("video");
+      if (videos && videos.length > 0) {
+        if (videos[0].paused) {
+          videos[0].play();
+        } else {
+          videos[0].pause();
+        }
+      }
+    } else if (video) {
+      if (video.paused) {
+        video.play();
+      } else {
+        video.pause();
+      }
+    }
+  }
+
+  function addPauseMarker() {
+    const isVideo = isMirrorVideo();
+    if (!isVideo) {
+      showToast("只有视频素材可以标记暂停点", "warning");
+      return;
+    }
+    if (currentVideoTime == null) {
+      showToast("请先播放视频", "warning");
+      return;
+    }
+    const exists = pauseMarkers.some((m) => Math.abs(m.time - currentVideoTime) < 0.5);
+    if (exists) {
+      showToast("该位置附近已有标记", "warning");
+      return;
+    }
+    pauseMarkers.push({
+      id: crypto.randomUUID(),
+      time: currentVideoTime
+    });
+    pauseMarkers.sort((a, b) => a.time - b.time);
+    renderMarkers();
+    showToast(`已在 ${formatDuration(currentVideoTime)} 添加暂停点`, "success", 2000);
+  }
+
+  function clearPauseMarkers() {
+    if (!pauseMarkers.length) {
+      showToast("没有可清除的标记", "info");
+      return;
+    }
+    if (!confirm("确定清除所有暂停标记？")) return;
+    pauseMarkers = [];
+    renderMarkers();
+    showToast("已清除所有暂停标记", "success");
+  }
+
+  function renderMarkers() {
+    const wrapper = getMirrorMediaWrapper();
+    if (!wrapper) return;
+
+    let container = wrapper.querySelector(".mirror-markers-container");
+    if (!container) {
+      container = document.createElement("div");
+      container.className = "mirror-markers-container";
+      wrapper.appendChild(container);
+    }
+
+    const video = getMirrorVideo() || (compareMode && getMirrorMediaBox()?.querySelector("video"));
+    if (!video || !video.duration || !isFinite(video.duration)) {
+      container.innerHTML = "";
+      return;
+    }
+
+    container.innerHTML = pauseMarkers.map((marker) => {
+      const percent = (marker.time / video.duration) * 100;
+      return `<div class="mirror-marker-dot" data-marker-id="${marker.id}" style="left: ${percent}%" title="${formatDuration(marker.time)}"></div>`;
+    }).join("");
+
+    container.querySelectorAll(".mirror-marker-dot").forEach((dot) => {
+      dot.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = dot.dataset.markerId;
+        const marker = pauseMarkers.find((m) => m.id === id);
+        if (marker) {
+          seekToTime(marker.time);
+        }
+      });
+    });
+  }
+
+  function seekToTime(time) {
+    const video = getMirrorVideo();
+    if (video) {
+      video.currentTime = time;
+    } else if (compareMode) {
+      const videos = getMirrorMediaBox()?.querySelectorAll("video");
+      if (videos) {
+        videos.forEach((v) => { v.currentTime = time; });
+      }
+    }
+  }
+
+  function checkPauseMarkers() {
+    if (!pauseMarkers.length) return;
+    const video = getMirrorVideo() || (compareMode && getMirrorMediaBox()?.querySelector("video"));
+    if (!video || video.paused) return;
+
+    for (const marker of pauseMarkers) {
+      if (Math.abs(video.currentTime - marker.time) < 0.15 && !video.paused) {
+        video.pause();
+        showToast(`到达标记点 ${formatDuration(marker.time)}，已暂停`, "info", 2000);
+        break;
+      }
+    }
+  }
+
+  function updateMirrorControlsVisibility() {
+    const isVideo = isMirrorVideo();
+    const controls = document.querySelector(".mirror-media-controls");
+    if (controls) {
+      controls.style.display = isVideo ? "flex" : "none";
+    }
+  }
+
+  function getSortedFrames(action) {
+    if (!action || !Array.isArray(action.frames)) return [];
+    return [...action.frames].sort((a, b) => {
+      const parseTime = (t) => {
+        if (!t) return null;
+        const s = String(t).trim();
+        const m1 = s.match(/^(\d+):(\d+)(?::(\d+))?$/);
+        if (m1) return Number(m1[1]) * 60 + Number(m1[2]) + (m1[3] ? Number(m1[3]) / 1000 : 0);
+        const m2 = s.match(/^(\d{1,2})(\d{2})$/);
+        if (m2) return Number(m2[1]) * 60 + Number(m2[2]);
+        const n = Number(s);
+        return !isNaN(n) && isFinite(n) ? n : null;
+      };
+      const at = parseTime(a.time);
+      const bt = parseTime(b.time);
+      if (at != null && bt != null) return at - bt;
+      if (at != null) return -1;
+      if (bt != null) return 1;
+      const aOrder = typeof a.order === "number" ? a.order : Infinity;
+      const bOrder = typeof b.order === "number" ? b.order : Infinity;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return 0;
+    });
+  }
+
+  function renderMirrorFrames() {
+    const action = activeAction();
+    const grid = document.querySelector("#mirrorFramesGrid");
+    const countEl = document.querySelector("#mirrorFramesCount");
+
+    if (!grid) return;
+
+    if (!action) {
+      grid.innerHTML = '<p class="muted mirror-frames-empty">选择一个动作查看关键帧对照</p>';
+      if (countEl) countEl.textContent = "0 帧";
+      return;
+    }
+
+    const frames = getSortedFrames(action);
+    if (countEl) countEl.textContent = `${frames.length} 帧`;
+
+    if (!frames.length) {
+      grid.innerHTML = '<p class="muted mirror-frames-empty">暂无关键帧数据</p>';
+      return;
+    }
+
+    grid.innerHTML = frames.map((frame) => {
+      const hasLeftRight = hasDirectionContent(frame.weight) || hasDirectionContent(frame.wrist) ||
+                           hasDirectionContent(frame.note) || hasDirectionContent(frame.tempo);
+      const stage = frame.stage || "未命名";
+      const time = frame.time || "未定时点";
+
+      return `
+        <article class="mirror-frame-card">
+          <div class="frame-stage">${escapeHtml(stage)}</div>
+          <div class="frame-time">⏱ ${escapeHtml(time)}</div>
+          ${mirrorEnabled || hasLeftRight ? renderFrameContent(frame) : renderFrameSimpleContent(frame)}
+        </article>
+      `;
+    }).join("");
+  }
+
+  function renderFrameSimpleContent(frame) {
+    return `
+      <div class="mirror-frame-item"><strong>重心：</strong>${escapeHtml(frame.weight || "未记录")}</div>
+      <div class="mirror-frame-item"><strong>手腕：</strong>${escapeHtml(frame.wrist || "未记录")}</div>
+      <div class="mirror-frame-item"><strong>节奏：</strong>${escapeHtml(frame.tempo || "未记录")}</div>
+      ${frame.note ? `<div class="mirror-frame-note">${escapeHtml(frame.note)}</div>` : ""}
+    `;
+  }
+
+  function renderFrameContent(frame) {
+    const weightOrig = frame.weight || "未记录";
+    const weightMirror = mirrorText(weightOrig);
+    const wristOrig = frame.wrist || "未记录";
+    const wristMirror = mirrorText(wristOrig);
+    const tempoOrig = frame.tempo || "未记录";
+    const tempoMirror = mirrorText(tempoOrig);
+    const noteOrig = frame.note || "";
+    const noteMirror = mirrorText(noteOrig);
+
+    const weightChanged = weightOrig !== weightMirror;
+    const wristChanged = wristOrig !== wristMirror;
+    const tempoChanged = tempoOrig !== tempoMirror;
+    const noteChanged = noteOrig !== noteMirror;
+
+    const showMirror = mirrorEnabled || weightChanged || wristChanged || tempoChanged || noteChanged;
+
+    if (!showMirror) {
+      return renderFrameSimpleContent(frame);
+    }
+
+    return `
+      <div class="mirror-frame-original">
+        <div class="mirror-frame-label">原始描述</div>
+        <div class="mirror-frame-item"><strong>重心：</strong>${escapeHtml(weightOrig)}</div>
+        <div class="mirror-frame-item"><strong>手腕：</strong>${escapeHtml(wristOrig)}</div>
+        <div class="mirror-frame-item"><strong>节奏：</strong>${escapeHtml(tempoOrig)}</div>
+        ${noteOrig ? `<div class="mirror-frame-note">${escapeHtml(noteOrig)}</div>` : ""}
+      </div>
+      <div class="mirror-frame-mirrored">
+        <div class="mirror-frame-label">💡 镜像对照</div>
+        <div class="mirror-frame-item"><strong>重心：</strong>${escapeHtml(weightMirror)}</div>
+        <div class="mirror-frame-item"><strong>手腕：</strong>${escapeHtml(wristMirror)}</div>
+        <div class="mirror-frame-item"><strong>节奏：</strong>${escapeHtml(tempoMirror)}</div>
+        ${noteMirror ? `<div class="mirror-frame-note">${escapeHtml(noteMirror)}</div>` : ""}
+      </div>
+    `;
+  }
+
+  function updateActionName() {
+    const nameEl = document.querySelector("#mirrorActionName");
+    const action = activeAction();
+    if (nameEl) {
+      nameEl.textContent = action ? `· ${action.name}` : "· 未选择动作";
+    }
+  }
+
+  async function renderMirrorView() {
+    updateActionName();
+    await renderMirrorMedia();
+    renderMirrorFrames();
+  }
+
+  function init() {
+    const toggleBtn = document.querySelector("#mirrorToggleBtn");
+    if (toggleBtn) {
+      toggleBtn.addEventListener("click", toggleMirror);
+    }
+
+    const compareBtn = document.querySelector("#mirrorCompareBtn");
+    if (compareBtn) {
+      compareBtn.addEventListener("click", toggleCompareMode);
+    }
+
+    const playBtn = document.querySelector("#mirrorPlayPauseBtn");
+    if (playBtn) {
+      playBtn.addEventListener("click", togglePlayPause);
+    }
+
+    const markerBtn = document.querySelector("#mirrorPauseMarkerBtn");
+    if (markerBtn) {
+      markerBtn.addEventListener("click", addPauseMarker);
+    }
+
+    const clearMarkersBtn = document.querySelector("#mirrorClearMarkersBtn");
+    if (clearMarkersBtn) {
+      clearMarkersBtn.addEventListener("click", clearPauseMarkers);
+    }
+
+    const originalSwitchMainTab = switchMainTab;
+    switchMainTab = function (mtab) {
+      originalSwitchMainTab(mtab);
+      if (mtab === "mirror") {
+        renderMirrorView();
+      }
+    };
+    window.switchMainTab = switchMainTab;
+  }
+
+  return {
+    init,
+    render: renderMirrorView,
+    toggleMirror,
+    toggleCompareMode,
+    mirrorText
+  };
+})();
+
+window.MirrorTraining = MirrorTraining;
+
+const _originalRenderAll = renderAll;
+renderAll = async function () {
+  await _originalRenderAll();
+  if (window.MirrorTraining) {
+    const activeTab = document.querySelector('.m-tab.active');
+    if (activeTab && activeTab.dataset.mtab === 'mirror') {
+      await window.MirrorTraining.render();
+    }
+  }
+};
+
 (async function bootstrap() {
   const libOk = await MediaLibrary.init();
   if (!libOk) {
@@ -1733,6 +2311,10 @@ document.querySelector("#openMediaLibraryBtn")?.addEventListener("click", openMe
 
   if (window.StoryboardTimeline) {
     window.StoryboardTimeline.init();
+  }
+
+  if (window.MirrorTraining) {
+    window.MirrorTraining.init();
   }
 
   await renderAll();
