@@ -4,8 +4,6 @@ const state = JSON.parse(localStorage.getItem(storageKey) || '{"actions":[],"act
 window.__appState = state;
 window.__saveAppState = save;
 window.__switchMainTab = switchMainTab;
-window.renderDetail = () => renderDetail();
-window.renderAnnotations = () => renderAnnotations();
 
 const actionForm = document.querySelector("#actionForm");
 const frameForm = document.querySelector("#frameForm");
@@ -711,9 +709,6 @@ async function renderDetail() {
   renderAnnotations();
 
   const sortedFrames = Array.isArray(action.frames) ? [...action.frames].sort((a, b) => {
-    const aOrder = typeof a.order === "number" ? a.order : Infinity;
-    const bOrder = typeof b.order === "number" ? b.order : Infinity;
-    if (aOrder !== bOrder) return aOrder - bOrder;
     const parseTime = (t) => {
       if (!t) return null;
       const s = String(t).trim();
@@ -729,6 +724,9 @@ async function renderDetail() {
     if (at != null && bt != null) return at - bt;
     if (at != null) return -1;
     if (bt != null) return 1;
+    const aOrder = typeof a.order === "number" ? a.order : Infinity;
+    const bOrder = typeof b.order === "number" ? b.order : Infinity;
+    if (aOrder !== bOrder) return aOrder - bOrder;
     return 0;
   }) : [];
 
@@ -754,6 +752,9 @@ async function renderDetail() {
     window.ReviewScoring.renderScoreSummary();
   }
 }
+
+window.__renderActionDetail = renderDetail;
+window.__renderActionAnnotations = renderAnnotations;
 
 function startTimer() {
   stopTimer();

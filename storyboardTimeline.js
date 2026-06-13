@@ -186,9 +186,50 @@ const StoryboardTimeline = (function () {
     }
   }
 
+  function getFrameById(frameId) {
+    return getFrames().find((f) => f.id === frameId) || null;
+  }
+
+  function getNearestFrameByTime(seconds) {
+    if (seconds == null) return null;
+    let nearest = null;
+    let nearestDelta = Infinity;
+    getFrames().forEach((frame) => {
+      const time = getFrameTimeSeconds(frame);
+      if (time == null) return;
+      const delta = Math.abs(time - seconds);
+      if (delta < nearestDelta) {
+        nearest = frame;
+        nearestDelta = delta;
+      }
+    });
+    return nearestDelta < 1.5 ? nearest : null;
+  }
+
+  function normalizeAnnotationLinks() {
+    getAnnotations().forEach((ann) => {
+      if (ann.frameId && getFrameById(ann.frameId)) return;
+      const nearest = getNearestFrameByTime(ann.timestamp);
+      if (nearest) ann.frameId = nearest.id;
+    });
+  }
+
+  function syncFrameAnnotations(frameId, oldTime, newTime) {
+    if (!frameId || newTime == null) return;
+    getAnnotations().forEach((ann) => {
+      const isLinked = ann.frameId === frameId;
+      const isLegacyMatch = !ann.frameId && oldTime != null && ann.timestamp != null && Math.abs(ann.timestamp - oldTime) < 1.5;
+      if (isLinked || isLegacyMatch) {
+        ann.frameId = frameId;
+        ann.timestamp = newTime;
+      }
+    });
+  }
+
   function syncFramesOrder() {
     const action = getActiveAction();
     if (!action || !Array.isArray(action.frames)) return;
+    normalizeAnnotationLinks();
     const sorted = getSortedFrames();
     sorted.forEach((f, idx) => {
       f.order = idx;
@@ -208,6 +249,11 @@ const StoryboardTimeline = (function () {
   function getSortedFrames() {
     const frames = getFrames();
     return [...frames].sort((a, b) => {
+      const timeA = getFrameTimeSeconds(a);
+      const timeB = getFrameTimeSeconds(b);
+      if (timeA != null && timeB != null) return timeA - timeB;
+      if (timeA != null) return -1;
+      if (timeB != null) return 1;
       if (typeof a.order === "number" && typeof b.order === "number") {
         if (a.order !== b.order) return a.order - b.order;
       } else if (typeof a.order === "number") {
@@ -215,11 +261,6 @@ const StoryboardTimeline = (function () {
       } else if (typeof b.order === "number") {
         return 1;
       }
-      const timeA = getFrameTimeSeconds(a);
-      const timeB = getFrameTimeSeconds(b);
-      if (timeA != null && timeB != null) return timeA - timeB;
-      if (timeA != null) return -1;
-      if (timeB != null) return 1;
       return 0;
     });
   }
@@ -295,6 +336,7 @@ const StoryboardTimeline = (function () {
     if (currentTime != null) {
       newFrame.time = formatTime(currentTime + 1);
     }
+    delete newFrame.order;
 
     action.frames.push(newFrame);
     state.selectedFrameId = newFrame.id;
@@ -314,6 +356,9 @@ const StoryboardTimeline = (function () {
     saveSnapshot("delete-frame");
 
     action.frames = action.frames.filter((f) => f.id !== frameId);
+    getAnnotations().forEach((ann) => {
+      if (ann.frameId === frameId) delete ann.frameId;
+    });
 
     if (state.selectedFrameId === frameId) state.selectedFrameId = null;
     if (state.expandedFrameId === frameId) state.expandedFrameId = null;
@@ -332,7 +377,11 @@ const StoryboardTimeline = (function () {
     if (!frame) return null;
 
     saveSnapshot("update-frame");
+    const oldTime = getFrameTimeSeconds(frame);
     Object.assign(frame, updates, { updatedAt: new Date().toISOString() });
+    if (Object.prototype.hasOwnProperty.call(updates, "time")) {
+      syncFrameAnnotations(frameId, oldTime, getFrameTimeSeconds(frame));
+    }
 
     commitChanges();
     return frame;
@@ -350,8 +399,10 @@ const StoryboardTimeline = (function () {
     }
 
     saveSnapshot("update-time");
+    const oldTime = getFrameTimeSeconds(frame);
     frame.time = newTimeStr.trim();
     frame.updatedAt = new Date().toISOString();
+    syncFrameAnnotations(frameId, oldTime, getFrameTimeSeconds(frame));
 
     commitChanges();
     return true;
@@ -419,6 +470,7 @@ const StoryboardTimeline = (function () {
     saveSnapshot("move-frame");
     frame.time = formatTime(clampedTime);
     frame.updatedAt = new Date().toISOString();
+    syncFrameAnnotations(frameId, oldTime, getFrameTimeSeconds(frame));
 
     commitChanges();
     return true;
@@ -443,10 +495,11 @@ const StoryboardTimeline = (function () {
     const frame = getFrames().find((f) => f.id === frameId);
     if (!frame) return [];
     const frameTime = getFrameTimeSeconds(frame);
-    if (frameTime == null) return [];
 
     const annotations = getAnnotations();
     return annotations.filter((ann) => {
+      if (ann.frameId) return ann.frameId === frameId;
+      if (frameTime == null) return false;
       if (ann.timestamp == null) return false;
       return Math.abs(ann.timestamp - frameTime) < 1.5;
     });
@@ -1098,14 +1151,14 @@ const StoryboardTimeline = (function () {
 
   function syncParentDetail() {
     syncFramesOrder();
-    if (typeof window.renderDetail === "function") {
-      window.renderDetail();
+    if (typeof window.__renderActionDetail === "function") {
+      window.__renderActionDetail();
     }
     if (typeof window.renderFramesList === "function") {
       window.renderFramesList();
     }
-    if (typeof window.renderAnnotations === "function") {
-      window.renderAnnotations();
+    if (typeof window.__renderActionAnnotations === "function") {
+      window.__renderActionAnnotations();
     }
   }
 
