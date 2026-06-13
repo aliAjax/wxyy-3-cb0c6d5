@@ -535,9 +535,60 @@ const KnowledgeSearch = (function () {
 
     switch (doc.type) {
       case "action":
-      case "frame":
-      case "annotation":
         if (doc.actionId) {
+          state.activeId = doc.actionId;
+          if (typeof window.__saveAppState === "function") {
+            window.__saveAppState();
+          }
+          if (typeof window.__switchMainTab === "function") {
+            window.__switchMainTab("detail");
+          }
+          if (typeof window.__renderAll === "function") {
+            window.__renderAll();
+          }
+          if (typeof switchSidebarTab === "function") {
+            switchSidebarTab("actions");
+          }
+          setTimeout(() => {
+            highlightTarget(`.action-item[data-action="${doc.actionId}"]`);
+          }, 200);
+        }
+        break;
+
+      case "frame":
+        if (doc.actionId && doc.frameId) {
+          state.activeId = doc.actionId;
+          if (typeof window.__saveAppState === "function") {
+            window.__saveAppState();
+          }
+          if (typeof window.__switchMainTab === "function") {
+            window.__switchMainTab("detail");
+          }
+          if (typeof window.__renderAll === "function") {
+            window.__renderAll();
+          }
+          setTimeout(() => {
+            if (typeof window.__switchMainTab === "function") {
+              window.__switchMainTab("storyboard");
+            }
+            if (window.StoryboardTimeline) {
+              window.StoryboardTimeline.selectFrame(doc.frameId);
+              window.StoryboardTimeline.expandFrame(doc.frameId);
+            }
+            setTimeout(() => {
+              const frameEl = document.querySelector(`.storyboard-frame-card[data-frame-id="${doc.frameId}"]`);
+              if (frameEl) {
+                scrollToElement(frameEl);
+                frameEl.classList.add("ks-highlight-target");
+                setTimeout(() => frameEl.classList.remove("ks-highlight-target"), 3600);
+              }
+            }, 150);
+          }, 100);
+        }
+        break;
+
+      case "annotation":
+        if (doc.actionId && doc.annotationId) {
           state.activeId = doc.actionId;
           if (typeof window.__saveAppState === "function") {
             window.__saveAppState();
@@ -550,16 +601,39 @@ const KnowledgeSearch = (function () {
           }
 
           setTimeout(() => {
-            if (doc.type === "frame" && doc.frameId) {
-              if (typeof window.__switchMainTab === "function") {
-                window.__switchMainTab("storyboard");
-              }
-              if (window.StoryboardTimeline) {
-                window.StoryboardTimeline.selectFrame(doc.frameId);
-                window.StoryboardTimeline.expandFrame(doc.frameId);
+            const action = state.actions ? state.actions.find((a) => a.id === doc.actionId) : null;
+            const annotation = findAnnotationById(action, doc.annotationId);
+
+            if (annotation && annotation.timestamp != null) {
+              const video = document.querySelector("#mediaBox video");
+              if (video && !isNaN(video.duration)) {
+                try {
+                  video.currentTime = Math.min(annotation.timestamp, video.duration);
+                } catch (e) {
+                  // ignore
+                }
               }
             }
-          }, 100);
+
+            if (annotation && action) {
+              const nearestFrame = findNearestFrameByTime(action, annotation.timestamp);
+              if (nearestFrame && window.StoryboardTimeline) {
+                window.StoryboardTimeline.selectFrame(nearestFrame.id);
+              }
+            }
+
+            if (typeof window.__openAnnotationModal === "function" && annotation) {
+              window.__openAnnotationModal(annotation);
+            }
+
+            setTimeout(() => {
+              const annEl = document.querySelector(`.annotation-point[data-annotation-id="${doc.annotationId}"]`);
+              if (annEl) {
+                annEl.classList.add("ks-highlight-target");
+                setTimeout(() => annEl.classList.remove("ks-highlight-target"), 3600);
+              }
+            }, 100);
+          }, 200);
         }
         break;
 
@@ -572,17 +646,26 @@ const KnowledgeSearch = (function () {
           if (typeof window.__switchMainTab === "function") {
             window.__switchMainTab("practice");
           }
+          if (typeof switchSidebarTab === "function") {
+            switchSidebarTab("sessions");
+          }
           if (typeof window.__renderAll === "function") {
             window.__renderAll();
           }
-          if (typeof window.switchSidebarTab === "function") {
-            switchSidebarTab("sessions");
-          }
+
+          setTimeout(() => {
+            const sessionEl = document.querySelector(`.session-card[data-session="${doc.sessionId}"]`);
+            if (sessionEl) {
+              scrollToElement(sessionEl);
+              sessionEl.classList.add("ks-highlight-target");
+              setTimeout(() => sessionEl.classList.remove("ks-highlight-target"), 3600);
+            }
+          }, 200);
         }
         break;
 
       case "score":
-        if (doc.actionId) {
+        if (doc.scoreId && doc.actionId) {
           state.activeId = doc.actionId;
           if (typeof window.__saveAppState === "function") {
             window.__saveAppState();
@@ -593,32 +676,93 @@ const KnowledgeSearch = (function () {
           if (typeof window.__renderAll === "function") {
             window.__renderAll();
           }
+
+          setTimeout(() => {
+            if (window.ReviewScoring && typeof window.ReviewScoring.renderAll === "function") {
+              window.ReviewScoring.renderAll();
+            }
+            setTimeout(() => {
+              const scoreEl = document.querySelector(`.score-history-card[data-score="${doc.scoreId}"]`);
+              if (scoreEl) {
+                scrollToElement(scoreEl);
+                scoreEl.classList.add("ks-highlight-target");
+                setTimeout(() => scoreEl.classList.remove("ks-highlight-target"), 3600);
+              }
+            }, 150);
+          }, 200);
         }
         break;
 
       case "choreography":
-      case "choreoItem":
         if (doc.choreographyId && window.Choreography) {
           if (typeof window.__switchMainTab === "function") {
             window.__switchMainTab("choreography");
           }
+          if (typeof switchSidebarTab === "function") {
+            switchSidebarTab("choreography");
+          }
           if (typeof window.Choreography.setActiveChoreographyId === "function") {
             window.Choreography.setActiveChoreographyId(doc.choreographyId);
+          }
+
+          setTimeout(() => {
+            const choreoEl = document.querySelector(`.choreo-card[data-choreo="${doc.choreographyId}"]`);
+            if (choreoEl) {
+              scrollToElement(choreoEl);
+              choreoEl.classList.add("ks-highlight-target");
+              setTimeout(() => choreoEl.classList.remove("ks-highlight-target"), 3600);
+            }
+          }, 200);
+        }
+        break;
+
+      case "choreoItem":
+        if (doc.choreographyId && doc.choreoItemId && window.Choreography) {
+          if (typeof window.__switchMainTab === "function") {
+            window.__switchMainTab("choreography");
           }
           if (typeof switchSidebarTab === "function") {
             switchSidebarTab("choreography");
           }
+          if (typeof window.Choreography.setActiveChoreographyId === "function") {
+            window.Choreography.setActiveChoreographyId(doc.choreographyId);
+          }
+
+          setTimeout(() => {
+            const itemEl = document.querySelector(`.choreo-item-row[data-item="${doc.choreoItemId}"]`);
+            if (itemEl) {
+              scrollToElement(itemEl);
+              itemEl.classList.add("ks-highlight-target");
+              setTimeout(() => itemEl.classList.remove("ks-highlight-target"), 3600);
+            }
+          }, 250);
         }
         break;
 
       case "plan":
-        if (doc.planDate && window.PracticeCalendar) {
+        if (doc.planId && window.PracticeCalendar) {
           if (typeof window.__switchMainTab === "function") {
             window.__switchMainTab("calendar");
           }
           if (window.PracticeCalendar.renderAll) {
             window.PracticeCalendar.renderAll();
           }
+
+          setTimeout(() => {
+            const planEl = document.querySelector(`.plan-card[data-plan-id="${doc.planId}"]`);
+            if (planEl) {
+              scrollToElement(planEl);
+              planEl.classList.add("ks-highlight-target");
+              setTimeout(() => planEl.classList.remove("ks-highlight-target"), 3600);
+            } else {
+              const dayEl = document.querySelector(`.cal-cell[data-date="${doc.planDate}"]`);
+              if (dayEl) {
+                scrollToElement(dayEl);
+                dayEl.classList.add("ks-highlight-target");
+                setTimeout(() => dayEl.classList.remove("ks-highlight-target"), 3600);
+              }
+            }
+          }, 200);
         }
         break;
     }
@@ -636,6 +780,50 @@ const KnowledgeSearch = (function () {
     document.querySelectorAll(".tab-panel").forEach((p) => {
       p.classList.toggle("active", p.id === `panel-${tab}`);
     });
+  }
+
+  function scrollToElement(el) {
+    if (!el) return false;
+    if (typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      return true;
+    }
+    return false;
+  }
+
+  function highlightTarget(selector, parent = document) {
+    if (!selector) return null;
+    const el = parent.querySelector(selector);
+    if (el) {
+      el.classList.add("ks-highlight-target");
+      setTimeout(() => {
+        el.classList.remove("ks-highlight-target");
+      }, 3600);
+      return el;
+    }
+    return null;
+  }
+
+  function findAnnotationById(action, annotationId) {
+    if (!action || !Array.isArray(action.annotations)) return null;
+    return action.annotations.find((a) => a.id === annotationId) || null;
+  }
+
+  function findNearestFrameByTime(action, timestamp) {
+    if (!action || !Array.isArray(action.frames) || timestamp == null) return null;
+    let nearest = null;
+    let minDiff = Infinity;
+    action.frames.forEach((frame) => {
+      const t = parseTimeString(frame.time);
+      if (t != null) {
+        const diff = Math.abs(t - timestamp);
+        if (diff < minDiff) {
+          minDiff = diff;
+          nearest = frame;
+        }
+      }
+    });
+    return nearest;
   }
 
   function renderSearchPanel() {

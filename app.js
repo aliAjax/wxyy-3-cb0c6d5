@@ -768,6 +768,8 @@ async function renderDetail() {
 
 window.__renderActionDetail = renderDetail;
 window.__renderActionAnnotations = renderAnnotations;
+window.__openAnnotationModal = openAnnotationModal;
+window.__activeAction = activeAction;
 
 function startTimer() {
   stopTimer();
