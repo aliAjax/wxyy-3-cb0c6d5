@@ -1829,6 +1829,9 @@ const MirrorTraining = (function () {
   async function renderMirrorMedia() {
     const action = activeAction();
     const box = getMirrorMediaBox();
+    const controls = document.querySelector(".mirror-media-controls");
+    if (controls) controls.style.display = "none";
+
     if (!box) return;
 
     if (!action) {
@@ -1876,7 +1879,7 @@ const MirrorTraining = (function () {
     }
 
     bindMirrorMediaEvents();
-    updateMirrorControlsVisibility();
+    if (isVideo && controls) controls.style.display = "flex";
   }
 
   function renderSingleMode(mediaSrc, isVideo) {
@@ -2079,14 +2082,6 @@ const MirrorTraining = (function () {
         showToast(`到达标记点 ${formatDuration(marker.time)}，已暂停`, "info", 2000);
         break;
       }
-    }
-  }
-
-  function updateMirrorControlsVisibility() {
-    const isVideo = isMirrorVideo();
-    const controls = document.querySelector(".mirror-media-controls");
-    if (controls) {
-      controls.style.display = isVideo ? "flex" : "none";
     }
   }
 
