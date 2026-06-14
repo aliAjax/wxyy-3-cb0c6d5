@@ -1194,16 +1194,36 @@ async function duplicateAction(actionId) {
   const source = state.actions.find((a) => a.id === actionId);
   if (!source) return null;
 
+  const frameIdMap = new Map();
+  const frames = Array.isArray(source.frames)
+    ? source.frames.map((f) => {
+        const newFrameId = crypto.randomUUID();
+        if (f.id) frameIdMap.set(f.id, newFrameId);
+        return { ...f, id: newFrameId };
+      })
+    : [];
+
+  const annotations = Array.isArray(source.annotations)
+    ? source.annotations.map((a) => {
+        const annotation = { ...a, id: crypto.randomUUID() };
+        if (annotation.frameId) {
+          const newFrameId = frameIdMap.get(annotation.frameId);
+          if (newFrameId) {
+            annotation.frameId = newFrameId;
+          } else {
+            delete annotation.frameId;
+          }
+        }
+        return annotation;
+      })
+    : [];
+
   const newAction = {
     id: crypto.randomUUID(),
     name: `${source.name}副本`,
     tags: source.tags || "",
-    frames: Array.isArray(source.frames)
-      ? source.frames.map((f) => ({ ...f, id: crypto.randomUUID() }))
-      : [],
-    annotations: Array.isArray(source.annotations)
-      ? source.annotations.map((a) => ({ ...a, id: crypto.randomUUID() }))
-      : [],
+    frames,
+    annotations,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
