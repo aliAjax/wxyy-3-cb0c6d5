@@ -181,6 +181,18 @@
   font-size: 18px;
 }
 
+.review-form-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+
+.review-form-header h3 {
+  margin-bottom: 0;
+}
+
 .review-no-action {
   color: var(--muted);
   font-size: 13px;

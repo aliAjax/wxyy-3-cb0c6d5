@@ -200,7 +200,10 @@ const ReviewScoring = (function () {
 
     panel.innerHTML = `
       <div class="review-score-form-section">
-        <h3>${escapeHtml(action.name)} — 录入评分</h3>
+        <div class="review-form-header">
+          <h3>${escapeHtml(action.name)} — 录入评分</h3>
+          <button type="button" id="addToCalendarFromReviewPageBtn" class="btn-small btn-accent">📅 加入日历计划</button>
+        </div>
         <div class="score-input-grid">
           ${slidersHtml}
         </div>
@@ -276,6 +279,23 @@ const ReviewScoring = (function () {
         updateTotalDisplay();
       });
     });
+
+    const addCalendarBtn = document.querySelector("#addToCalendarFromReviewPageBtn");
+    if (addCalendarBtn) {
+      addCalendarBtn.addEventListener("click", () => {
+        const activeId = window.__appState?.activeId;
+        const action = window.__appState?.actions?.find((a) => a.id === activeId);
+        if (!action) {
+          if (typeof window.showToast === "function") {
+            window.showToast("请先选择一个动作", "warning");
+          }
+          return;
+        }
+        if (window.PracticeCalendar) {
+          window.PracticeCalendar.openPlanModalForAction(action.id, action.name);
+        }
+      });
+    }
 
     const submitBtn = document.querySelector("#submitScoreBtn");
     if (submitBtn) {
