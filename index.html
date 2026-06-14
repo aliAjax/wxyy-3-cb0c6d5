@@ -118,20 +118,19 @@
             <button type="submit">加入关键帧</button>
           </form>
 
-          <div class="action-detail-toolbar">
-            <span class="toolbar-spacer"></span>
-            <button type="button" class="btn-small btn-accent" id="addToCalendarFromDetailBtn" title="将该动作加入练习日历">
-              📅 加入练习日历
-            </button>
-          </div>
-
           <div class="review-score-section">
-            <h2>复盘评分</h2>
+            <div class="section-header-row">
+              <h2>复盘评分</h2>
+              <button type="button" id="addToCalendarFromReviewBtn" class="btn-small btn-accent">📅 加入日历计划</button>
+            </div>
             <div id="scoreSummary"></div>
           </div>
 
           <div class="history-section">
-            <h2>关联历史课次</h2>
+            <div class="section-header-row">
+              <h2>关联历史课次</h2>
+              <button type="button" id="addToCalendarFromDetailBtn" class="btn-small btn-accent">📅 加入日历计划</button>
+            </div>
             <div id="actionHistoryList" class="history-list"></div>
           </div>
         </div>

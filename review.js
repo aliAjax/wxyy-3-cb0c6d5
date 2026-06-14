@@ -214,9 +214,6 @@ const ReviewScoring = (function () {
           <span class="score-input-total-number" id="scoreTotalDisplay">${DIMENSIONS.length * 3}</span>
         </div>
         <div class="score-submit-row">
-          <button type="button" id="addToCalendarFromReviewBtn" class="btn-secondary" title="将该动作加入练习日历">
-            📅 加入练习日历
-          </button>
           <button type="button" id="resetScoreBtn" class="btn-secondary">重置</button>
           <button type="button" id="submitScoreBtn" class="btn-accent">保存评分</button>
         </div>
@@ -297,29 +294,6 @@ const ReviewScoring = (function () {
 
         addScore(activeId, dimensions, note);
         renderScoreSummary();
-      });
-    }
-
-    const addToCalendarBtn = document.querySelector("#addToCalendarFromReviewBtn");
-    if (addToCalendarBtn) {
-      addToCalendarBtn.addEventListener("click", () => {
-        const activeId = window.__appState?.activeId;
-        if (!activeId) {
-          if (typeof window.showToast === "function") {
-            window.showToast("请先选择一个动作", "error");
-          }
-          return;
-        }
-        const action = window.__appState?.actions?.find((a) => a.id === activeId);
-        if (!action) {
-          if (typeof window.showToast === "function") {
-            window.showToast("未找到当前动作", "error");
-          }
-          return;
-        }
-        if (window.PracticeCalendar && typeof window.PracticeCalendar.openPlanModalForAction === "function") {
-          window.PracticeCalendar.openPlanModalForAction(action.id, action.name);
-        }
       });
     }
 

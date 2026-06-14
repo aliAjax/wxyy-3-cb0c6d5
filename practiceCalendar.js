@@ -536,7 +536,7 @@ const PracticeCalendar = (function () {
     bindModalEvents();
   }
 
-  function openPlanModal(plan = null, preset = null) {
+  function openPlanModal(plan = null) {
     const modal = document.getElementById("planModal");
     if (!modal) return;
 
@@ -544,40 +544,58 @@ const PracticeCalendar = (function () {
 
     document.getElementById("planModalTitle").textContent = isEdit ? "编辑练习计划" : "添加练习计划";
     document.getElementById("planId").value = plan?.id || "";
-
-    const dateValue = plan?.date || preset?.date || selectedDate;
-    document.getElementById("planDate").value = dateValue;
-
-    const typeValue = plan?.type || preset?.type || "action";
-    document.getElementById("planType").value = typeValue;
-
-    const goalValue = plan?.goal || preset?.goal || "";
-    document.getElementById("planGoal").value = goalValue;
-
-    const noteValue = plan?.note || preset?.note || "";
-    document.getElementById("planNote").value = noteValue;
+    document.getElementById("planDate").value = plan?.date || selectedDate;
+    document.getElementById("planType").value = plan?.type || "action";
+    document.getElementById("planGoal").value = plan?.goal || "";
+    document.getElementById("planNote").value = plan?.note || "";
 
     const typeSelect = document.getElementById("planType");
-    const refIdValue = plan?.refId || preset?.refId || null;
-    updateRefOptions(typeSelect.value, refIdValue);
+    updateRefOptions(typeSelect.value, plan?.refId);
 
     document.getElementById("planDeleteBtn").hidden = !isEdit;
 
     modal.hidden = false;
   }
 
-  function openPlanModalForAction(actionId, actionName, goal = "") {
-    if (!actionId) {
-      showToast("请先选择一个动作", "error");
-      return;
-    }
-    const preset = {
-      date: getTodayKey(),
-      type: "action",
-      refId: actionId,
-      goal: goal || `练习「${actionName}」`
-    };
-    openPlanModal(null, preset);
+  function openPlanModalForAction(actionId, actionName, options = {}) {
+    const modal = document.getElementById("planModal");
+    if (!modal) return;
+
+    const defaultGoal = options.goal !== undefined
+      ? options.goal
+      : `练习${actionName || "动作"}，熟练掌握动作要领`;
+
+    document.getElementById("planModalTitle").textContent = "添加练习计划";
+    document.getElementById("planId").value = "";
+    document.getElementById("planDate").value = options.date || getTodayKey();
+    document.getElementById("planGoal").value = defaultGoal;
+    document.getElementById("planNote").value = options.note || "";
+
+    const typeSelect = document.getElementById("planType");
+    typeSelect.value = "action";
+    updateRefOptions("action", actionId);
+    document.getElementById("planDeleteBtn").hidden = true;
+
+    modal.hidden = false;
+
+    setTimeout(() => {
+      const goalInput = document.getElementById("planGoal");
+      if (goalInput) {
+        goalInput.focus();
+        goalInput.select();
+      }
+    }, 50);
+  }
+
+  function getPlansByRef(refId, type) {
+    return plans.filter((p) => {
+      if (refId && p.refId !== refId) return false;
+      if (type && p.type !== type) return false;
+      return true;
+    }).map((p) => ({
+      ...p,
+      _invalid: !isReferenceValid(p)
+    }));
   }
 
   function updateRefOptions(type, selectedId = null) {
@@ -708,6 +726,9 @@ const PracticeCalendar = (function () {
       planModal.hidden = true;
       selectedDate = date;
       renderCalendar();
+      if (typeof window.__renderAll === "function") {
+        window.__renderAll();
+      }
     });
 
     document.getElementById("planDeleteBtn")?.addEventListener("click", () => {
@@ -718,6 +739,9 @@ const PracticeCalendar = (function () {
         planModal.hidden = true;
         renderCalendar();
         showToast("计划已删除", "success");
+        if (typeof window.__renderAll === "function") {
+          window.__renderAll();
+        }
       }
     });
 
@@ -767,7 +791,18 @@ const PracticeCalendar = (function () {
       batchModal.hidden = true;
       renderCalendar();
       showToast(`已批量创建 ${created.length} 个练习计划`, "success", 4000);
+      if (typeof window.__renderAll === "function") {
+        window.__renderAll();
+      }
     });
+  }
+
+  function navigateToDate(dateKey) {
+    if (!dateKey) return;
+    selectedDate = dateKey;
+    const d = parseDateKey(dateKey);
+    currentDate = new Date(d.getFullYear(), d.getMonth(), 1);
+    renderCalendar();
   }
 
   function renderAll() {
@@ -781,6 +816,7 @@ const PracticeCalendar = (function () {
 
   function init() {
     load();
+    bindModalEvents();
   }
 
   return {
@@ -789,6 +825,7 @@ const PracticeCalendar = (function () {
     getAllPlans,
     getPlansByDate,
     getPlansByRange,
+    getPlansByRef,
     createPlan,
     updatePlan,
     deletePlan,
@@ -798,7 +835,7 @@ const PracticeCalendar = (function () {
     setData,
     formatDateKey,
     getTodayKey,
-    openPlanModal,
+    navigateToDate,
     openPlanModalForAction
   };
 })();

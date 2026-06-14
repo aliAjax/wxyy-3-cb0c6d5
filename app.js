@@ -625,24 +625,60 @@ function renderActionHistory() {
     return;
   }
   const sessions = state.sessions.filter((s) => s.actionId === action.id);
-  if (!sessions.length) {
+  const calendarPlans = window.PracticeCalendar
+    ? window.PracticeCalendar.getPlansByRef(action.id, "action")
+    : [];
+
+  const hasData = sessions.length > 0 || calendarPlans.length > 0;
+
+  if (!hasData) {
     actionHistoryList.innerHTML = `<p class="muted">该动作暂无练习记录</p>`;
     return;
   }
-  const sorted = [...sessions].sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
-  actionHistoryList.innerHTML = sorted.map((s) => `
-    <article class="history-item" data-jump-session="${s.id}">
-      <div class="h-left">
-        ${statusBadge(s.status)}
-        <span class="h-date">${formatDate(s.startTime)}</span>
-      </div>
-      <div class="h-right">
-        <span>${formatDuration(s.duration)} · ${s.tempoBPM || "-"} BPM</span>
-        <span>${s.selectedFrameIds.length}帧</span>
-      </div>
-      ${s.reviewNote ? `<p class="h-note">${escapeHtml(s.reviewNote)}</p>` : ""}
-    </article>
-  `).join("");
+
+  let html = "";
+
+  if (calendarPlans.length > 0) {
+    const sortedPlans = [...calendarPlans].sort((a, b) => a.date.localeCompare(b.date));
+    html += `<h4 style="margin:0 0 8px;font-size:13px;color:var(--muted);">📅 日历计划</h4>`;
+    html += sortedPlans.map((p) => {
+      const statusLabel = p.completed ? "已完成" : (p.date < new Date().toISOString().slice(0, 10) ? "已逾期" : "待完成");
+      const statusCls = p.completed ? "st-done" : (p.date < new Date().toISOString().slice(0, 10) ? "st-abandon" : "st-progress");
+      const invalidCls = p._invalid ? " plan-invalid" : "";
+      return `
+        <article class="plan-history-item${invalidCls}" data-jump-plan="${p.id}" data-plan-date="${p.date}">
+          <div class="ph-left">
+            <span class="status-badge ${statusCls}">${statusLabel}</span>
+            <span class="ph-date">${p.date}</span>
+          </div>
+          ${p.goal ? `<div class="ph-goal">🎯 ${escapeHtml(p.goal)}</div>` : ""}
+          ${p._invalid ? `<div class="ph-invalid-hint" style="font-size:12px;color:var(--muted);margin-top:4px;">⚠ 关联动作已不存在</div>` : ""}
+        </article>
+      `;
+    }).join("");
+  }
+
+  if (sessions.length > 0) {
+    if (calendarPlans.length > 0) {
+      html += `<h4 style="margin:12px 0 8px;font-size:13px;color:var(--muted);">🏋️ 练习课次</h4>`;
+    }
+    const sorted = [...sessions].sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+    html += sorted.map((s) => `
+      <article class="history-item" data-jump-session="${s.id}">
+        <div class="h-left">
+          ${statusBadge(s.status)}
+          <span class="h-date">${formatDate(s.startTime)}</span>
+        </div>
+        <div class="h-right">
+          <span>${formatDuration(s.duration)} · ${s.tempoBPM || "-"} BPM</span>
+          <span>${s.selectedFrameIds.length}帧</span>
+        </div>
+        ${s.reviewNote ? `<p class="h-note">${escapeHtml(s.reviewNote)}</p>` : ""}
+      </article>
+    `).join("");
+  }
+
+  actionHistoryList.innerHTML = html;
 }
 
 async function renderDetail() {
@@ -1325,14 +1361,39 @@ sessionsList.addEventListener("click", (e) => {
 });
 
 actionHistoryList.addEventListener("click", (e) => {
-  const id = e.target.closest("[data-jump-session]")?.dataset.jumpSession;
-  if (!id) return;
-  state.activeSessionId = id;
-  save();
-  switchMainTab("practice");
-  switchSidebarTab("sessions");
-  renderAll();
+  const sessionId = e.target.closest("[data-jump-session]")?.dataset.jumpSession;
+  if (sessionId) {
+    state.activeSessionId = sessionId;
+    save();
+    switchMainTab("practice");
+    switchSidebarTab("sessions");
+    renderAll();
+    return;
+  }
+  const planEl = e.target.closest("[data-jump-plan]");
+  if (planEl) {
+    const planId = planEl.dataset.jumpPlan;
+    const planDate = planEl.dataset.planDate;
+    switchMainTab("calendar");
+    if (window.PracticeCalendar && planDate) {
+      window.PracticeCalendar.navigateToDate(planDate);
+    }
+  }
 });
+
+function handleAddToCalendar() {
+  const action = activeAction();
+  if (!action) {
+    showToast("请先选择一个动作", "warning");
+    return;
+  }
+  if (window.PracticeCalendar) {
+    window.PracticeCalendar.openPlanModalForAction(action.id, action.name);
+  }
+}
+
+document.querySelector("#addToCalendarFromDetailBtn")?.addEventListener("click", handleAddToCalendar);
+document.querySelector("#addToCalendarFromReviewBtn")?.addEventListener("click", handleAddToCalendar);
 
 document.querySelector("#openSessionsBtn").addEventListener("click", () => {
   switchSidebarTab("sessions");
@@ -1597,22 +1658,6 @@ addAnnotationBtn.addEventListener("click", async () => {
 });
 
 toggleAnnotationsBtn.addEventListener("click", toggleAnnotationsVisibility);
-
-document.addEventListener("click", (e) => {
-  const addToCalendarBtn = e.target.closest("#addToCalendarFromDetailBtn");
-  if (addToCalendarBtn) {
-    const action = activeAction();
-    if (!action) {
-      showToast("请先选择一个动作", "error");
-      return;
-    }
-    if (window.PracticeCalendar && typeof window.PracticeCalendar.openPlanModalForAction === "function") {
-      window.PracticeCalendar.openPlanModalForAction(action.id, action.name);
-    } else {
-      showToast("练习日历模块未加载", "error");
-    }
-  }
-});
 
 annotationLayer.addEventListener("click", handleAnnotationLayerClick);
 
