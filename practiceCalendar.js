@@ -536,7 +536,7 @@ const PracticeCalendar = (function () {
     bindModalEvents();
   }
 
-  function openPlanModal(plan = null) {
+  function openPlanModal(plan = null, preset = null) {
     const modal = document.getElementById("planModal");
     if (!modal) return;
 
@@ -544,17 +544,40 @@ const PracticeCalendar = (function () {
 
     document.getElementById("planModalTitle").textContent = isEdit ? "编辑练习计划" : "添加练习计划";
     document.getElementById("planId").value = plan?.id || "";
-    document.getElementById("planDate").value = plan?.date || selectedDate;
-    document.getElementById("planType").value = plan?.type || "action";
-    document.getElementById("planGoal").value = plan?.goal || "";
-    document.getElementById("planNote").value = plan?.note || "";
+
+    const dateValue = plan?.date || preset?.date || selectedDate;
+    document.getElementById("planDate").value = dateValue;
+
+    const typeValue = plan?.type || preset?.type || "action";
+    document.getElementById("planType").value = typeValue;
+
+    const goalValue = plan?.goal || preset?.goal || "";
+    document.getElementById("planGoal").value = goalValue;
+
+    const noteValue = plan?.note || preset?.note || "";
+    document.getElementById("planNote").value = noteValue;
 
     const typeSelect = document.getElementById("planType");
-    updateRefOptions(typeSelect.value, plan?.refId);
+    const refIdValue = plan?.refId || preset?.refId || null;
+    updateRefOptions(typeSelect.value, refIdValue);
 
     document.getElementById("planDeleteBtn").hidden = !isEdit;
 
     modal.hidden = false;
+  }
+
+  function openPlanModalForAction(actionId, actionName, goal = "") {
+    if (!actionId) {
+      showToast("请先选择一个动作", "error");
+      return;
+    }
+    const preset = {
+      date: getTodayKey(),
+      type: "action",
+      refId: actionId,
+      goal: goal || `练习「${actionName}」`
+    };
+    openPlanModal(null, preset);
   }
 
   function updateRefOptions(type, selectedId = null) {
@@ -774,7 +797,9 @@ const PracticeCalendar = (function () {
     getWeekStats,
     setData,
     formatDateKey,
-    getTodayKey
+    getTodayKey,
+    openPlanModal,
+    openPlanModalForAction
   };
 })();
 

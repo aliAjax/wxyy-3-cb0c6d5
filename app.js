@@ -1598,6 +1598,22 @@ addAnnotationBtn.addEventListener("click", async () => {
 
 toggleAnnotationsBtn.addEventListener("click", toggleAnnotationsVisibility);
 
+document.addEventListener("click", (e) => {
+  const addToCalendarBtn = e.target.closest("#addToCalendarFromDetailBtn");
+  if (addToCalendarBtn) {
+    const action = activeAction();
+    if (!action) {
+      showToast("请先选择一个动作", "error");
+      return;
+    }
+    if (window.PracticeCalendar && typeof window.PracticeCalendar.openPlanModalForAction === "function") {
+      window.PracticeCalendar.openPlanModalForAction(action.id, action.name);
+    } else {
+      showToast("练习日历模块未加载", "error");
+    }
+  }
+});
+
 annotationLayer.addEventListener("click", handleAnnotationLayerClick);
 
 annotationForm.addEventListener("submit", (e) => {

@@ -123,6 +123,20 @@ button:active {
   gap: 10px;
 }
 
+.action-detail-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 16px 8px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 16px;
+}
+
+.action-detail-toolbar .toolbar-spacer {
+  flex: 1;
+}
+
 .grid {
   display: grid;
   grid-template-columns: 320px minmax(380px, 1fr) 350px;
