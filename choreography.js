@@ -23,6 +23,8 @@ const Choreography = (function () {
         if (item.transitionBeatOffset == null) {
           item.transitionBeatOffset = 0;
         }
+        item.beats = normalizeBeatCount(item.beats);
+        item.transitionBeatOffset = clampTransitionBeatOffset(item.transitionBeatOffset, item.beats);
       });
     });
     bindEvents();
@@ -33,6 +35,17 @@ const Choreography = (function () {
     state.timelineViewMode = mode === "beat" ? "beat" : "action";
     saveToParent();
     renderAll();
+  }
+
+  function normalizeBeatCount(beats) {
+    return Math.min(Math.max(1, parseInt(beats, 10) || 8), 64);
+  }
+
+  function clampTransitionBeatOffset(offset, beats) {
+    const maxOffset = Math.max(0, normalizeBeatCount(beats) - 1);
+    const parsedOffset = parseInt(offset, 10);
+    const safeOffset = Number.isFinite(parsedOffset) ? parsedOffset : 0;
+    return Math.min(Math.max(0, safeOffset), maxOffset);
   }
 
   function getState() {
@@ -92,6 +105,7 @@ const Choreography = (function () {
     const action = window.__appState?.actions?.find((a) => a.id === actionId);
     if (!choreo || !action) return null;
 
+    const parsedBeats = normalizeBeatCount(beats);
     const calculatedStartBeat = startBeat != null ? startBeat : getTotalBeats(choreo);
 
     const item = {
@@ -99,12 +113,12 @@ const Choreography = (function () {
       actionId: action.id,
       actionSnapshotName: action.name,
       previousNames: [],
-      beats: parseInt(beats, 10) || 8,
+      beats: parsedBeats,
       transitionHint: transitionHint.trim(),
       note: note.trim(),
       order: choreo.items.length,
       startBeat: calculatedStartBeat,
-      transitionBeatOffset: parseInt(transitionBeatOffset, 10) || 0,
+      transitionBeatOffset: clampTransitionBeatOffset(transitionBeatOffset, parsedBeats),
     };
     choreo.items.push(item);
     choreo.updatedAt = new Date().toISOString();
@@ -119,6 +133,8 @@ const Choreography = (function () {
     const item = choreo.items.find((i) => i.id === itemId);
     if (!item) return null;
     Object.assign(item, updates);
+    item.beats = normalizeBeatCount(item.beats);
+    item.transitionBeatOffset = clampTransitionBeatOffset(item.transitionBeatOffset, item.beats);
     choreo.updatedAt = new Date().toISOString();
     saveToParent();
     renderAll();
@@ -487,6 +503,8 @@ const Choreography = (function () {
     let cumulative = 0;
     const sortedItems = [...choreo.items].sort((a, b) => a.order - b.order);
     sortedItems.forEach((item) => {
+      item.beats = normalizeBeatCount(item.beats);
+      item.transitionBeatOffset = clampTransitionBeatOffset(item.transitionBeatOffset, item.beats);
       item.startBeat = cumulative;
       cumulative += item.beats;
     });
