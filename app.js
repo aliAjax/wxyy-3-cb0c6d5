@@ -1780,13 +1780,16 @@ async function renderMediaLibrary() {
   }
 
   const totalOrphanCount = allMedia.filter((m) => !usedIds.has(m.id)).length;
+  const filteredMedia = applyMediaFilter(allMedia, usedIds);
+  const filteredOrphanCount = filteredMedia.filter((m) => !usedIds.has(m.id)).length;
+
   if (mediaLibWarnings) {
     const warnings = [];
     if (storageInfo.usageRatio > 0.9) {
       warnings.push(`<div class="media-lib-warning danger">⚠ 存储容量警告：已使用 ${(storageInfo.usageRatio * 100).toFixed(0)}%，请及时清理不需要的素材</div>`);
     }
-    if (totalOrphanCount > 0 && mediaFilter !== "orphan") {
-      warnings.push(`<div class="media-lib-warning info">ℹ 发现 ${totalOrphanCount} 个孤立素材（未被任何动作引用），可点击清理按钮释放空间</div>`);
+    if (filteredOrphanCount > 0 && mediaFilter !== "orphan") {
+      warnings.push(`<div class="media-lib-warning info">ℹ 当前视图中有 ${filteredOrphanCount} 个孤立素材（未被任何动作引用），可点击清理按钮释放空间</div>`);
     }
     if (warnings.length) {
       mediaLibWarnings.innerHTML = warnings.join("");
@@ -1798,12 +1801,20 @@ async function renderMediaLibrary() {
   }
 
   if (cleanupOrphanBtn) {
-    cleanupOrphanBtn.disabled = totalOrphanCount === 0;
-    cleanupOrphanBtn.style.opacity = totalOrphanCount === 0 ? "0.5" : "1";
-    cleanupOrphanBtn.style.cursor = totalOrphanCount === 0 ? "not-allowed" : "pointer";
+    cleanupOrphanBtn.disabled = filteredOrphanCount === 0;
+    cleanupOrphanBtn.style.opacity = filteredOrphanCount === 0 ? "0.5" : "1";
+    cleanupOrphanBtn.style.cursor = filteredOrphanCount === 0 ? "not-allowed" : "pointer";
+    let btnLabel = "清理孤立素材";
+    if (mediaFilter === "image") {
+      btnLabel = `清理 ${filteredOrphanCount} 个孤立图片`;
+    } else if (mediaFilter === "video") {
+      btnLabel = `清理 ${filteredOrphanCount} 个孤立视频`;
+    } else if (filteredOrphanCount > 0) {
+      btnLabel = `清理 ${filteredOrphanCount} 个孤立素材`;
+    }
+    cleanupOrphanBtn.textContent = btnLabel;
   }
 
-  const filteredMedia = applyMediaFilter(allMedia, usedIds);
   const sortedMedia = sortMediaList(filteredMedia);
 
   if (mediaLibStats) {
@@ -1894,14 +1905,30 @@ mediaLibraryGrid?.addEventListener("click", async (e) => {
 });
 
 cleanupOrphanBtn?.addEventListener("click", async () => {
-  const orphans = await MediaLibrary.findOrphanedMedia(state);
-  if (!orphans.length) {
-    showToast("没有找到孤立素材", "info");
+  const allMedia = await MediaLibrary.getAllMedia();
+  const usedIds = new Set(MediaLibrary.getUsedMediaIds(state));
+  const filteredMedia = applyMediaFilter(allMedia, usedIds);
+  const orphansToClean = filteredMedia.filter((m) => !usedIds.has(m.id));
+
+  if (!orphansToClean.length) {
+    showToast("当前视图中没有孤立素材", "info");
     return;
   }
-  if (!confirm(`确定清理 ${orphans.length} 个孤立素材？此操作不可恢复。`)) return;
-  const deleted = await MediaLibrary.cleanupOrphanedMedia(state);
-  showToast(`已清理 ${deleted.length} 个孤立素材`, "success");
+
+  let typeLabel = "个孤立素材";
+  if (mediaFilter === "image") typeLabel = "个孤立图片";
+  else if (mediaFilter === "video") typeLabel = "个孤立视频";
+  else if (mediaFilter === "orphan") typeLabel = "个孤立素材";
+
+  if (!confirm(`确定清理当前视图中的 ${orphansToClean.length}${typeLabel}？此操作不可恢复。`)) return;
+
+  const deleted = [];
+  for (const m of orphansToClean) {
+    const ok = await MediaLibrary.deleteMedia(m.id);
+    if (ok) deleted.push(m.id);
+  }
+
+  showToast(`已清理 ${deleted.length}${typeLabel}`, "success");
   await renderMediaLibrary();
 });
 
