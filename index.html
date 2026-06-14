@@ -491,9 +491,14 @@
                 <input type="number" id="choreoBeatsInput" value="8" min="1" max="64" placeholder="8">
               </label>
             </div>
-            <label>过门提示
-              <input type="text" id="choreoTransitionInput" placeholder="如：圆场、亮相、慢板过渡">
-            </label>
+            <div class="add-item-fields">
+              <label>过门提示
+                <input type="text" id="choreoTransitionInput" placeholder="如：圆场、亮相、慢板过渡">
+              </label>
+              <label>转场位置（相对第1拍）
+                <input type="number" id="choreoTransitionBeatInput" value="0" min="0" max="63" placeholder="0">
+              </label>
+            </div>
             <div class="add-item-note">
               <label>衔接备注
                 <textarea id="choreoNoteInput" rows="2" placeholder="描述与上一个动作的衔接要点..."></textarea>

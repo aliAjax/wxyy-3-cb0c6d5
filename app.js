@@ -1,5 +1,5 @@
 const storageKey = "wxyy-3-kunqu-sleeve-board";
-const state = JSON.parse(localStorage.getItem(storageKey) || '{"actions":[],"activeId":null,"sessions":[],"activeSessionId":null,"choreographies":[],"activeChoreographyId":null,"scores":[]}');
+const state = JSON.parse(localStorage.getItem(storageKey) || '{"actions":[],"activeId":null,"sessions":[],"activeSessionId":null,"choreographies":[],"activeChoreographyId":null,"scores":[],"timelineViewMode":"action"}');
 
 window.__appState = state;
 window.__saveAppState = save;

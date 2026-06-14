@@ -4,18 +4,34 @@ const Choreography = (function () {
     activeChoreographyId: null,
     editingChoreographyId: null,
     addingActionToChoreography: false,
+    timelineViewMode: "action",
   };
 
   function init(initialChoreos = []) {
     state.choreographies = initialChoreos;
+    if (window.__appState?.timelineViewMode) {
+      state.timelineViewMode = window.__appState.timelineViewMode;
+    }
     state.choreographies.forEach((choreo) => {
       choreo.items.forEach((item) => {
         if (!Array.isArray(item.previousNames)) {
           item.previousNames = [];
         }
+        if (item.startBeat == null) {
+          item.startBeat = 0;
+        }
+        if (item.transitionBeatOffset == null) {
+          item.transitionBeatOffset = 0;
+        }
       });
     });
     bindEvents();
+    renderAll();
+  }
+
+  function setTimelineViewMode(mode) {
+    state.timelineViewMode = mode === "beat" ? "beat" : "action";
+    saveToParent();
     renderAll();
   }
 
@@ -71,10 +87,12 @@ const Choreography = (function () {
     renderAll();
   }
 
-  function addActionToChoreography(choreoId, actionId, beats = 8, transitionHint = "", note = "") {
+  function addActionToChoreography(choreoId, actionId, beats = 8, transitionHint = "", note = "", startBeat = null, transitionBeatOffset = 0) {
     const choreo = state.choreographies.find((c) => c.id === choreoId);
     const action = window.__appState?.actions?.find((a) => a.id === actionId);
     if (!choreo || !action) return null;
+
+    const calculatedStartBeat = startBeat != null ? startBeat : getTotalBeats(choreo);
 
     const item = {
       id: crypto.randomUUID(),
@@ -85,6 +103,8 @@ const Choreography = (function () {
       transitionHint: transitionHint.trim(),
       note: note.trim(),
       order: choreo.items.length,
+      startBeat: calculatedStartBeat,
+      transitionBeatOffset: parseInt(transitionBeatOffset, 10) || 0,
     };
     choreo.items.push(item);
     choreo.updatedAt = new Date().toISOString();
@@ -374,6 +394,8 @@ const Choreography = (function () {
         return;
       }
 
+      recalculateStartBeats(choreo);
+
       itemsListEl.innerHTML = choreo.items
         .sort((a, b) => a.order - b.order)
         .map((item, idx) => {
@@ -424,17 +446,25 @@ const Choreography = (function () {
             `;
           }
 
+          const maxTransitionOffset = Math.max(0, item.beats - 1);
+
           return `
             <div class="choreo-item-row ${rowClass}" data-item="${item.id}">
               <div class="item-order">${idx + 1}</div>
               <div class="item-body">
                 ${nameSectionHtml}
+                <div class="item-beat-info">
+                  <span class="item-beat-range">📊 第 ${item.startBeat + 1} - ${item.startBeat + item.beats} 拍</span>
+                </div>
                 <div class="item-fields">
                   <label>拍数
                     <input type="number" class="item-beats" data-item-beats="${item.id}" value="${item.beats}" min="1" max="64">
                   </label>
                   <label>过门提示
                     <input type="text" class="item-transition" data-item-transition="${item.id}" value="${escapeHtml(item.transitionHint)}" placeholder="如：圆场、亮相">
+                  </label>
+                  <label>转场位置（相对第1拍）
+                    <input type="number" class="item-transition-beat" data-item-transition-beat="${item.id}" value="${item.transitionBeatOffset}" min="0" max="${maxTransitionOffset}" placeholder="0" ${!item.transitionHint ? "disabled" : ""}>
                   </label>
                 </div>
                 <label class="item-note-label">衔接备注
@@ -453,6 +483,158 @@ const Choreography = (function () {
     }
   }
 
+  function recalculateStartBeats(choreo) {
+    let cumulative = 0;
+    const sortedItems = [...choreo.items].sort((a, b) => a.order - b.order);
+    sortedItems.forEach((item) => {
+      item.startBeat = cumulative;
+      cumulative += item.beats;
+    });
+  }
+
+  function renderBeatViewTimeline(choreo, sortedItems, totalBeats, actions) {
+    const beatWidthPercent = 100 / totalBeats;
+    const beatCells = [];
+
+    for (let i = 0; i < totalBeats; i++) {
+      const isMajor = (i + 1) % 4 === 0 || i === 0;
+      const isTransition = sortedItems.some((item) => {
+        if (!item.transitionHint) return false;
+        const transitionBeat = item.startBeat + item.transitionBeatOffset;
+        return transitionBeat === i;
+      });
+
+      beatCells.push(`
+        <div class="beat-cell ${isMajor ? "major" : ""} ${isTransition ? "has-transition" : ""}" style="width: ${beatWidthPercent}%">
+          <div class="beat-number">${isMajor ? i + 1 : ""}</div>
+        </div>
+      `);
+    }
+
+    const beatRulerHtml = `
+      <div class="beat-ruler">
+        ${beatCells.join("")}
+      </div>
+    `;
+
+    const trackItemsHtml = sortedItems
+      .map((item) => {
+        const action = actions.find((a) => a.id === item.actionId);
+        const isDeleted = !action;
+        const isRenamed = action && action.name !== item.actionSnapshotName;
+        const previousNames = Array.isArray(item.previousNames) ? item.previousNames : [];
+        const isSynced = !isDeleted && !isRenamed && previousNames.length > 0;
+        const trackClass = isDeleted ? "deleted" : isRenamed ? "renamed" : isSynced ? "synced" : "";
+
+        const startBeat = item.startBeat;
+        const endBeat = item.startBeat + item.beats;
+        const leftPercent = (startBeat / totalBeats) * 100;
+        const widthPercent = (item.beats / totalBeats) * 100;
+
+        const transitionBeat = startBeat + item.transitionBeatOffset;
+        const transitionLeftPercent = ((transitionBeat - startBeat) / item.beats) * 100;
+
+        let nameHtml = "";
+        if (isRenamed) {
+          nameHtml = `<div class="tl-name tl-name-new">${escapeHtml(action.name)}</div>`;
+        } else {
+          nameHtml = `<div class="tl-name">${escapeHtml(item.actionSnapshotName)}</div>`;
+        }
+
+        return `
+          <div class="tl-beat-track ${trackClass}" 
+               data-choreo-item="${escapeHtml(item.id)}" 
+               style="left: ${leftPercent}%; width: ${widthPercent}%;">
+            <div class="tl-beat-track-inner">
+              <div class="tl-beat-head">
+                <div class="tl-order">${item.order + 1}</div>
+                ${nameHtml}
+              </div>
+              <div class="tl-beat-info">
+                <span class="tl-beats">${item.beats} 拍</span>
+                <span class="tl-range">第 ${startBeat + 1} - ${endBeat} 拍</span>
+              </div>
+              ${item.transitionHint ? `
+                <div class="tl-beat-transition-marker" style="left: ${transitionLeftPercent}%;">
+                  <div class="tl-beat-transition-line"></div>
+                  <div class="tl-beat-transition-label">
+                    🎭 ${escapeHtml(item.transitionHint)}
+                    <span class="tl-beat-transition-position">第 ${transitionBeat + 1} 拍</span>
+                  </div>
+                </div>
+              ` : ""}
+              ${item.note ? `<div class="tl-note">${escapeHtml(item.note)}</div>` : ""}
+              ${isDeleted ? `<div class="tl-badge deleted">动作已删除</div>` : ""}
+              ${isRenamed ? `<div class="tl-badge renamed">已改名</div><button type="button" class="btn-small btn-accent tl-sync-btn" data-sync-name="${item.id}">同步快照</button>` : ""}
+              ${isSynced ? `<div class="tl-badge synced">曾改名(已同步)</div>` : ""}
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+
+    const trackRowsHtml = sortedItems
+      .map((item) => {
+        const beatSlots = [];
+        const startBeat = item.startBeat;
+        const endBeat = item.startBeat + item.beats;
+        const transitionBeat = startBeat + item.transitionBeatOffset;
+
+        for (let i = 0; i < totalBeats; i++) {
+          const inRange = i >= startBeat && i < endBeat;
+          const isStart = i === startBeat;
+          const isEnd = i === endBeat - 1;
+          const isTransition = item.transitionHint && i === transitionBeat;
+          const isMajor = (i + 1) % 4 === 0 || i === 0;
+
+          beatSlots.push(`
+            <div class="beat-slot ${inRange ? "active" : ""} ${isStart ? "start" : ""} ${isEnd ? "end" : ""} ${isTransition ? "transition" : ""} ${isMajor ? "major" : ""}" 
+                 style="width: ${beatWidthPercent}%"
+                 data-beat="${i + 1}">
+              ${isTransition && item.transitionHint ? `
+                <div class="beat-slot-transition-indicator" title="${escapeHtml(item.transitionHint)}">🎭</div>
+              ` : ""}
+              ${isStart ? `<div class="beat-slot-label">${escapeHtml(item.actionSnapshotName)}</div>` : ""}
+            </div>
+          `);
+        }
+
+        return `
+          <div class="beat-track-row" data-choreo-item="${escapeHtml(item.id)}">
+            <div class="beat-track-label">
+              <span class="beat-track-order">${item.order + 1}</span>
+              <span class="beat-track-name">${escapeHtml(item.actionSnapshotName)}</span>
+              <span class="beat-track-beats">${item.beats}拍</span>
+            </div>
+            <div class="beat-track-slots">
+              ${beatSlots.join("")}
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+
+    return `
+      <div class="beat-view-container">
+        ${beatRulerHtml}
+        <div class="tl-beat-tracks">
+          ${trackItemsHtml}
+        </div>
+        <div class="beat-grid-container">
+          <div class="beat-grid-header">
+            <div class="beat-grid-label-col">动作</div>
+            <div class="beat-grid-beats" style="width: calc(100% - 100px);">
+              ${beatCells.join("")}
+            </div>
+          </div>
+          <div class="beat-grid-rows">
+            ${trackRowsHtml}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   function renderChoreographyTimeline() {
     const timelineEl = document.querySelector("#choreographyTimeline");
     const choreo = activeChoreography();
@@ -465,9 +647,12 @@ const Choreography = (function () {
       return;
     }
 
+    recalculateStartBeats(choreo);
+
     const warnings = getChoreographyWarnings(choreo);
     const totalBeats = getTotalBeats(choreo);
     const sortedItems = [...choreo.items].sort((a, b) => a.order - b.order);
+    const viewMode = state.timelineViewMode;
 
     let warningHtml = "";
     if (warnings.length) {
@@ -492,70 +677,96 @@ const Choreography = (function () {
       `;
     }
 
-    let cumulativeBeats = 0;
-    const timelineHtml = sortedItems
-      .map((item) => {
-        const action = actions.find((a) => a.id === item.actionId);
-        const isDeleted = !action;
-        const isRenamed = action && action.name !== item.actionSnapshotName;
-        const previousNames = Array.isArray(item.previousNames) ? item.previousNames : [];
-        const isSynced = !isDeleted && !isRenamed && previousNames.length > 0;
-        const trackClass = isDeleted ? "deleted" : isRenamed ? "renamed" : isSynced ? "synced" : "";
-        const startBeat = cumulativeBeats;
-        cumulativeBeats += item.beats;
-        const endBeat = cumulativeBeats;
-        const widthPercent = (item.beats / totalBeats) * 100;
+    let timelineContentHtml = "";
 
-        let nameHtml = "";
-        if (isRenamed) {
-          const renameChain = previousNames.length > 0
-            ? [...previousNames.map((p) => `<span class="tl-name-history-item">${escapeHtml(p.name)}</span>`), `<span class="tl-name-old">${escapeHtml(item.actionSnapshotName)}</span>`].join('<span class="tl-name-history-arrow">→</span>')
-            : "";
-          nameHtml = `
-            <div class="tl-name-rename-group">
-              ${renameChain ? `<div class="tl-name-history-chain">${renameChain}<span class="tl-rename-arrow">→</span></div>` : ""}
-              <div class="tl-name tl-name-new">${escapeHtml(action.name)}</div>
-            </div>
-          `;
-        } else if (isSynced) {
-          nameHtml = `
-            <div class="tl-name-synced-group">
-              <div class="tl-name">${escapeHtml(item.actionSnapshotName)}</div>
-              <div class="tl-name-history-chain">
-                ${previousNames.map((p) => `<span class="tl-name-history-item">${escapeHtml(p.name)}</span>`).join('<span class="tl-name-history-arrow">→</span>')}
-                <span class="tl-name-history-arrow">→</span>
-                <span class="tl-name-history-current">${escapeHtml(item.actionSnapshotName)}</span>
+    if (viewMode === "beat") {
+      timelineContentHtml = renderBeatViewTimeline(choreo, sortedItems, totalBeats, actions);
+    } else {
+      let cumulativeBeats = 0;
+      const timelineHtml = sortedItems
+        .map((item) => {
+          const action = actions.find((a) => a.id === item.actionId);
+          const isDeleted = !action;
+          const isRenamed = action && action.name !== item.actionSnapshotName;
+          const previousNames = Array.isArray(item.previousNames) ? item.previousNames : [];
+          const isSynced = !isDeleted && !isRenamed && previousNames.length > 0;
+          const trackClass = isDeleted ? "deleted" : isRenamed ? "renamed" : isSynced ? "synced" : "";
+          const startBeat = cumulativeBeats;
+          cumulativeBeats += item.beats;
+          const endBeat = cumulativeBeats;
+          const widthPercent = (item.beats / totalBeats) * 100;
+
+          let nameHtml = "";
+          if (isRenamed) {
+            const renameChain = previousNames.length > 0
+              ? [...previousNames.map((p) => `<span class="tl-name-history-item">${escapeHtml(p.name)}</span>`), `<span class="tl-name-old">${escapeHtml(item.actionSnapshotName)}</span>`].join('<span class="tl-name-history-arrow">→</span>')
+              : "";
+            nameHtml = `
+              <div class="tl-name-rename-group">
+                ${renameChain ? `<div class="tl-name-history-chain">${renameChain}<span class="tl-rename-arrow">→</span></div>` : ""}
+                <div class="tl-name tl-name-new">${escapeHtml(action.name)}</div>
+              </div>
+            `;
+          } else if (isSynced) {
+            nameHtml = `
+              <div class="tl-name-synced-group">
+                <div class="tl-name">${escapeHtml(item.actionSnapshotName)}</div>
+                <div class="tl-name-history-chain">
+                  ${previousNames.map((p) => `<span class="tl-name-history-item">${escapeHtml(p.name)}</span>`).join('<span class="tl-name-history-arrow">→</span>')}
+                  <span class="tl-name-history-arrow">→</span>
+                  <span class="tl-name-history-current">${escapeHtml(item.actionSnapshotName)}</span>
+                </div>
+              </div>
+            `;
+          } else {
+            nameHtml = `<div class="tl-name">${escapeHtml(item.actionSnapshotName)}</div>`;
+          }
+
+          return `
+            <div class="tl-track ${trackClass}" data-choreo-item="${escapeHtml(item.id)}" style="width: ${widthPercent}%">
+              <div class="tl-track-inner">
+                <div class="tl-order">${item.order + 1}</div>
+                ${nameHtml}
+                <div class="tl-beats">${item.beats} 拍</div>
+                <div class="tl-range">${startBeat + 1}-${endBeat}</div>
+                ${item.transitionHint ? `<div class="tl-transition">🎭 ${escapeHtml(item.transitionHint)}</div>` : ""}
+                ${item.note ? `<div class="tl-note">${escapeHtml(item.note)}</div>` : ""}
+                ${isDeleted ? `<div class="tl-badge deleted">动作已删除</div><div class="tl-original-name">原名：${escapeHtml(item.actionSnapshotName)}</div>` : ""}
+                ${isRenamed ? `<div class="tl-badge renamed">已改名</div><button type="button" class="btn-small btn-accent tl-sync-btn" data-sync-name="${item.id}">同步快照</button>` : ""}
+                ${isSynced ? `<div class="tl-badge synced">曾改名(已同步)</div>` : ""}
               </div>
             </div>
           `;
-        } else {
-          nameHtml = `<div class="tl-name">${escapeHtml(item.actionSnapshotName)}</div>`;
-        }
+        })
+        .join("");
 
-        return `
-          <div class="tl-track ${trackClass}" data-choreo-item="${escapeHtml(item.id)}" style="width: ${widthPercent}%">
-            <div class="tl-track-inner">
-              <div class="tl-order">${item.order + 1}</div>
-              ${nameHtml}
-              <div class="tl-beats">${item.beats} 拍</div>
-              <div class="tl-range">${startBeat + 1}-${endBeat}</div>
-              ${item.transitionHint ? `<div class="tl-transition">🎭 ${escapeHtml(item.transitionHint)}</div>` : ""}
-              ${item.note ? `<div class="tl-note">${escapeHtml(item.note)}</div>` : ""}
-              ${isDeleted ? `<div class="tl-badge deleted">动作已删除</div><div class="tl-original-name">原名：${escapeHtml(item.actionSnapshotName)}</div>` : ""}
-              ${isRenamed ? `<div class="tl-badge renamed">已改名</div><button type="button" class="btn-small btn-accent tl-sync-btn" data-sync-name="${item.id}">同步快照</button>` : ""}
-              ${isSynced ? `<div class="tl-badge synced">曾改名(已同步)</div>` : ""}
-            </div>
+      const rulerHtml = `
+        <div class="tl-ruler">
+          ${Array.from({ length: totalBeats }, (_, i) => {
+            const isMajor = (i + 1) % 4 === 0 || i === 0;
+            return `<div class="tl-ruler-mark ${isMajor ? "major" : ""}">${isMajor ? i + 1 : ""}</div>`;
+          }).join("")}
+        </div>
+      `;
+
+      timelineContentHtml = `
+        <div class="tl-container">
+          ${rulerHtml}
+          <div class="tl-tracks">
+            ${timelineHtml}
           </div>
-        `;
-      })
-      .join("");
+        </div>
+      `;
+    }
 
-    const rulerHtml = `
-      <div class="tl-ruler">
-        ${Array.from({ length: totalBeats }, (_, i) => {
-          const isMajor = (i + 1) % 4 === 0 || i === 0;
-          return `<div class="tl-ruler-mark ${isMajor ? "major" : ""}">${isMajor ? i + 1 : ""}</div>`;
-        }).join("")}
+    const modeToggleHtml = `
+      <div class="tl-view-toggle">
+        <button type="button" class="tl-view-btn ${viewMode === "action" ? "active" : ""}" data-view-mode="action">
+          按动作项排列
+        </button>
+        <button type="button" class="tl-view-btn ${viewMode === "beat" ? "active" : ""}" data-view-mode="beat">
+          按板拍预览
+        </button>
       </div>
     `;
 
@@ -568,16 +779,12 @@ const Choreography = (function () {
         <div class="choreo-timeline-stats">
           <span>${sortedItems.length} 个动作</span>
           <span>${totalBeats} 拍</span>
+          ${modeToggleHtml}
           <button type="button" class="btn-small btn-secondary" data-edit-choreo="${choreo.id}">编辑编排</button>
         </div>
       </div>
       ${warningHtml}
-      <div class="tl-container">
-        ${rulerHtml}
-        <div class="tl-tracks">
-          ${timelineHtml}
-        </div>
-      </div>
+      ${timelineContentHtml}
       <div class="choreo-sequence">
         <h4>动作序列详情</h4>
         ${sortedItems.map((item, idx) => {
@@ -626,6 +833,10 @@ const Choreography = (function () {
             `;
           }
 
+          const transitionBeatDisplay = item.transitionHint 
+            ? `<span class="seq-meta-item">🎭 转场位置: 第 ${item.startBeat + item.transitionBeatOffset + 1} 拍</span>`
+            : "";
+
           return `
             <div class="seq-row ${rowClass}" data-choreo-item="${escapeHtml(item.id)}">
               <div class="seq-order">${idx + 1}</div>
@@ -634,7 +845,9 @@ const Choreography = (function () {
                 ${isDeleted ? `<div class="seq-original-name deleted">此动作已被删除，原名：${escapeHtml(item.actionSnapshotName)}${previousNames.length ? `，曾用名：${previousNames.map((p) => escapeHtml(p.name)).join(" → ")}` : ""}</div>` : ""}
                 <div class="seq-meta">
                   <span class="seq-beats">🎵 ${item.beats} 拍</span>
+                  <span class="seq-range">📊 第 ${item.startBeat + 1} - ${item.startBeat + item.beats} 拍</span>
                   ${item.transitionHint ? `<span class="seq-transition">🎭 ${escapeHtml(item.transitionHint)}</span>` : ""}
+                  ${transitionBeatDisplay}
                 </div>
                 ${item.note ? `<div class="seq-note">${escapeHtml(item.note)}</div>` : ""}
               </div>
@@ -695,6 +908,7 @@ const Choreography = (function () {
   function saveToParent() {
     if (window.__appState) {
       window.__appState.choreographies = state.choreographies;
+      window.__appState.timelineViewMode = state.timelineViewMode;
       if (typeof window.__saveAppState === "function") {
         window.__saveAppState();
       }
@@ -800,6 +1014,7 @@ const Choreography = (function () {
         const beatsInput = document.querySelector("#choreoBeatsInput");
         const transitionInput = document.querySelector("#choreoTransitionInput");
         const noteInput = document.querySelector("#choreoNoteInput");
+        const transitionBeatInput = document.querySelector("#choreoTransitionBeatInput");
 
         const actionId = actionSelect?.value;
         if (!actionId) {
@@ -812,13 +1027,16 @@ const Choreography = (function () {
           actionId,
           beatsInput?.value || 8,
           transitionInput?.value || "",
-          noteInput?.value || ""
+          noteInput?.value || "",
+          null,
+          transitionBeatInput?.value || 0
         );
 
         if (actionSelect) actionSelect.value = "";
         if (beatsInput) beatsInput.value = "8";
         if (transitionInput) transitionInput.value = "";
         if (noteInput) noteInput.value = "";
+        if (transitionBeatInput) transitionBeatInput.value = "0";
       });
     }
 
@@ -832,6 +1050,7 @@ const Choreography = (function () {
         const beatsItemId = e.target.closest("[data-item-beats]")?.dataset.itemBeats;
         const transitionItemId = e.target.closest("[data-item-transition]")?.dataset.itemTransition;
         const noteItemId = e.target.closest("[data-item-note]")?.dataset.itemNote;
+        const transitionBeatItemId = e.target.closest("[data-item-transition-beat]")?.dataset.itemTransitionBeat;
 
         if (beatsItemId) {
           updateChoreographyItem(state.editingChoreographyId, beatsItemId, {
@@ -847,6 +1066,16 @@ const Choreography = (function () {
           updateChoreographyItem(state.editingChoreographyId, noteItemId, {
             note: e.target.value,
           });
+        }
+        if (transitionBeatItemId) {
+          const item = choreo.items.find((i) => i.id === transitionBeatItemId);
+          if (item) {
+            const maxOffset = Math.max(0, item.beats - 1);
+            const value = Math.min(Math.max(0, parseInt(e.target.value, 10) || 0), maxOffset);
+            updateChoreographyItem(state.editingChoreographyId, transitionBeatItemId, {
+              transitionBeatOffset: value,
+            });
+          }
         }
       });
 
@@ -899,6 +1128,12 @@ const Choreography = (function () {
       timeline.addEventListener("click", (e) => {
         const editId = e.target.closest("[data-edit-choreo]")?.dataset.editChoreo;
         const syncId = e.target.closest("[data-sync-name]")?.dataset.syncName;
+        const viewMode = e.target.closest("[data-view-mode]")?.dataset.viewMode;
+
+        if (viewMode) {
+          setTimelineViewMode(viewMode);
+          return;
+        }
 
         if (syncId) {
           const choreo = activeChoreography();
@@ -948,6 +1183,8 @@ const Choreography = (function () {
     openChoreographyModal,
     closeChoreographyModal,
     setActiveChoreographyId,
+    setTimelineViewMode,
+    recalculateStartBeats,
     saveToParent,
   };
 })();
