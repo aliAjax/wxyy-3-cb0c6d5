@@ -184,15 +184,16 @@ const ReviewScoring = (function () {
     const trendCls = trend;
 
     const dimBarsHtml = DIMENSIONS.map((d) => {
-      const val = latest.dimensions[d.key] || 0;
+      const hasVal = latest.dimensions && latest.dimensions[d.key] != null;
+      const val = hasVal ? latest.dimensions[d.key] : 0;
       const pct = (val / 5) * 100;
       return `
-        <div class="score-dim-row">
+        <div class="score-dim-row ${!hasVal ? "score-dim-row-missing" : ""}">
           <span class="score-dim-label">${d.label}</span>
           <div class="score-dim-bar-track">
             <div class="score-dim-bar-fill ${d.fillClass}" style="width:${pct}%"></div>
           </div>
-          <span class="score-dim-value">${val}</span>
+          <span class="score-dim-value">${hasVal ? val : '<span class="muted">—</span>'}</span>
         </div>
       `;
     }).join("");
