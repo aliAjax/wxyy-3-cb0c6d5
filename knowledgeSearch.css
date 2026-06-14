@@ -476,3 +476,50 @@
   pointer-events: none;
   animation: ks-highlight-pulse 1.2s ease-in-out 3;
 }
+
+.ks-item-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.ks-item-score-count,
+.ks-item-avg {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: "SF Mono", "Consolas", monospace;
+  background: #f5efe8;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.ks-item-trend {
+  font-size: 11px;
+  padding: 1px 8px;
+}
+
+.ks-item-dim-trends {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.ks-dim-trend {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #faf5f8;
+  font-family: "SF Mono", "Consolas", monospace;
+}
+
+.ks-dim-trend-up {
+  background: #eaf3ea;
+}
+
+.ks-dim-trend-down {
+  background: #f6eaea;
+}

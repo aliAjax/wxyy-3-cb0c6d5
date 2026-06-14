@@ -87,6 +87,42 @@ const KnowledgeSearch = (function () {
 
       const actionHandClues = detectHandClues(`${action.name} ${action.tags || ""}`);
 
+      const actionScores = scores.filter((s) => s.actionId === action.id)
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+      let latestScore = null;
+      let avgScore = null;
+      let scoreTrend = null;
+      let scoreCount = actionScores.length;
+      let bestDimension = null;
+      let worstDimension = null;
+      let dimensionTrends = null;
+
+      if (actionScores.length > 0 && window.ReviewScoring) {
+        latestScore = actionScores[0];
+        avgScore = window.ReviewScoring.calcAverage(actionScores);
+        scoreTrend = window.ReviewScoring.calcTrend(actionScores);
+        if (actionScores.length >= 2) {
+          const trends = window.ReviewScoring.calcAllDimensionTrends(actionScores);
+          const DIMS = window.ReviewScoring.DIMENSIONS;
+          let maxDiff = -Infinity;
+          let minDiff = Infinity;
+          dimensionTrends = {};
+          DIMS.forEach((d) => {
+            const t = trends[d.key];
+            dimensionTrends[d.key] = t;
+            if (t.diff > maxDiff && t.dataPoints >= 2) {
+              maxDiff = t.diff;
+              bestDimension = { key: d.key, label: d.label, color: d.color, diff: t.diff, trend: t.trend };
+            }
+            if (t.diff < minDiff && t.dataPoints >= 2) {
+              minDiff = t.diff;
+              worstDimension = { key: d.key, label: d.label, color: d.color, diff: t.diff, trend: t.trend };
+            }
+          });
+        }
+      }
+
       newIndex.push({
         id: `action-${action.id}`,
         type: "action",
@@ -98,11 +134,19 @@ const KnowledgeSearch = (function () {
         stages: [],
         handClues: actionHandClues,
         timePoints: [],
-        score: null,
-        maxScore: null,
+        score: latestScore ? latestScore.total : null,
+        maxScore: latestScore ? latestScore.maxTotal : null,
         createdAt: action.createdAt,
         updatedAt: action.updatedAt || action.createdAt,
-        metadata: { actionId: action.id }
+        metadata: {
+          actionId: action.id,
+          scoreCount,
+          avgScore,
+          scoreTrend,
+          bestDimension,
+          worstDimension,
+          dimensionTrends
+        }
       });
 
       const frames = action.frames || [];
@@ -966,22 +1010,7 @@ const KnowledgeSearch = (function () {
                 <span class="ks-group-count">${group.count}</span>
               </div>
               <div class="ks-group-items">
-                ${group.items.slice(0, 50).map((doc) => `
-                  <div class="ks-result-item" data-doc-id="${doc.id}" data-doc-type="${doc.type}">
-                    <div class="ks-item-main">
-                      <div class="ks-item-title">${highlightText(doc.title, lastQuery)}</div>
-                      <div class="ks-item-meta">
-                        ${doc.actionName ? `<span class="ks-item-action">${escapeHtml(doc.actionName)}</span>` : ""}
-                        ${doc.tags.length ? `<span class="ks-item-tags">${doc.tags.slice(0, 3).map((t) => `#${escapeHtml(t)}`).join(" ")}</span>` : ""}
-                        ${doc.score != null ? `<span class="ks-item-score">⭐ ${doc.score}/${doc.maxScore}</span>` : ""}
-                      </div>
-                      ${doc.text ? `<div class="ks-item-snippet">${highlightText(doc.text.substring(0, 100), lastQuery)}${doc.text.length > 100 ? "..." : ""}</div>` : ""}
-                    </div>
-                    <div class="ks-item-side">
-                      <button type="button" class="ks-item-jump" title="跳转到详情">→</button>
-                    </div>
-                  </div>
-                `).join("")}
+                ${group.items.slice(0, 50).map((doc) => renderSearchResultItem(doc)).join("")}
                 ${group.items.length > 50 ? `<div class="ks-more-hint">还有 ${group.items.length - 50} 条结果...</div>` : ""}
               </div>
             </div>
@@ -991,6 +1020,64 @@ const KnowledgeSearch = (function () {
     `;
 
     bindPanelEvents();
+  }
+
+  function renderActionScoreInfo(doc) {
+    const meta = doc.metadata || {};
+    if (!meta.scoreCount || meta.scoreCount === 0) return "";
+    const trendLabel = { up: "↑ 上升", down: "↓ 下降", flat: "→ 持平" };
+    const parts = [];
+    parts.push(`<span class="ks-item-score">⭐ ${doc.score}/${doc.maxScore}</span>`);
+    parts.push(`<span class="ks-item-score-count">${meta.scoreCount}次</span>`);
+    if (meta.avgScore != null) {
+      parts.push(`<span class="ks-item-avg">均${meta.avgScore.toFixed(1)}</span>`);
+    }
+    if (meta.scoreTrend) {
+      parts.push(`<span class="score-trend-direction ${meta.scoreTrend} ks-item-trend">${trendLabel[meta.scoreTrend]}</span>`);
+    }
+    const dimParts = [];
+    if (meta.bestDimension && meta.bestDimension.trend !== "flat") {
+      const d = meta.bestDimension;
+      const sign = d.diff > 0 ? "+" : "";
+      dimParts.push(`<span class="ks-dim-trend ks-dim-trend-up" style="color:${d.color}">${d.label} ${sign}${d.diff.toFixed(1)}</span>`);
+    }
+    if (meta.worstDimension && meta.worstDimension.trend !== "flat" && meta.worstDimension.key !== (meta.bestDimension || {}).key) {
+      const d = meta.worstDimension;
+      const sign = d.diff > 0 ? "+" : "";
+      dimParts.push(`<span class="ks-dim-trend ks-dim-trend-down" style="color:${d.color}">${d.label} ${sign}${d.diff.toFixed(1)}</span>`);
+    }
+    return `
+      <div class="ks-item-meta ks-item-meta-row">
+        ${parts.join("")}
+      </div>
+      ${dimParts.length ? `<div class="ks-item-dim-trends">${dimParts.join("")}</div>` : ""}
+    `;
+  }
+
+  function renderSearchResultItem(doc) {
+    const scoreInfo = doc.type === "action" ? renderActionScoreInfo(doc) : "";
+    const genericMeta = doc.type !== "action" ? `
+      ${doc.actionName ? `<span class="ks-item-action">${escapeHtml(doc.actionName)}</span>` : ""}
+      ${doc.tags.length ? `<span class="ks-item-tags">${doc.tags.slice(0, 3).map((t) => `#${escapeHtml(t)}`).join(" ")}</span>` : ""}
+      ${doc.score != null ? `<span class="ks-item-score">⭐ ${doc.score}/${doc.maxScore}</span>` : ""}
+    ` : `
+      ${doc.tags.length ? `<span class="ks-item-tags">${doc.tags.slice(0, 3).map((t) => `#${escapeHtml(t)}`).join(" ")}</span>` : ""}
+    `;
+    return `
+      <div class="ks-result-item" data-doc-id="${doc.id}" data-doc-type="${doc.type}">
+        <div class="ks-item-main">
+          <div class="ks-item-title">${highlightText(doc.title, lastQuery)}</div>
+          <div class="ks-item-meta">
+            ${genericMeta}
+          </div>
+          ${scoreInfo}
+          ${doc.text ? `<div class="ks-item-snippet">${highlightText(doc.text.substring(0, 100), lastQuery)}${doc.text.length > 100 ? "..." : ""}</div>` : ""}
+        </div>
+        <div class="ks-item-side">
+          <button type="button" class="ks-item-jump" title="跳转到详情">→</button>
+        </div>
+      </div>
+    `;
   }
 
   function performSearch(query, filters) {

@@ -70,6 +70,13 @@ const ReviewScoring = (function () {
     return sum / scores.length;
   }
 
+  function calcDimensionAverage(scores, dimensionKey) {
+    const valid = scores.filter((s) => s.dimensions && s.dimensions[dimensionKey] != null);
+    if (!valid.length) return null;
+    const sum = valid.reduce((acc, s) => acc + (s.dimensions[dimensionKey] || 0), 0);
+    return sum / valid.length;
+  }
+
   function calcTrend(scores) {
     if (scores.length < 2) return "flat";
     const recent = scores.slice(0, 3);
@@ -82,6 +89,60 @@ const ReviewScoring = (function () {
     if (recentAvg > olderAvg + 0.5) return "up";
     if (recentAvg < olderAvg - 0.5) return "down";
     return "flat";
+  }
+
+  function calcDimensionTrend(scores, dimensionKey) {
+    const validScores = scores.filter((s) => s.dimensions && s.dimensions[dimensionKey] != null);
+    if (validScores.length < 2) return { trend: "flat", diff: 0, recentAvg: null, olderAvg: null, dataPoints: validScores.length };
+    const recent = validScores.slice(0, 3);
+    const older = validScores.slice(3, 6);
+    const recentAvg = calcDimensionAverage(recent, dimensionKey);
+    let trend = "flat";
+    let diff = 0;
+    let olderAvg = null;
+    if (!older.length) {
+      const first = validScores[0].dimensions[dimensionKey] || 0;
+      const second = validScores[1].dimensions[dimensionKey] || 0;
+      diff = first - second;
+      olderAvg = second;
+    } else {
+      olderAvg = calcDimensionAverage(older, dimensionKey);
+      diff = (recentAvg || 0) - (olderAvg || 0);
+    }
+    if (diff > 0.3) trend = "up";
+    else if (diff < -0.3) trend = "down";
+    return { trend, diff, recentAvg, olderAvg, dataPoints: validScores.length };
+  }
+
+  function calcAllDimensionTrends(scores) {
+    const result = {};
+    DIMENSIONS.forEach((d) => {
+      result[d.key] = calcDimensionTrend(scores, d.key);
+    });
+    result.total = calcTrend(scores);
+    return result;
+  }
+
+  function buildTrendSeries(scores, maxPoints = 10) {
+    const ordered = [...scores].reverse().slice(-maxPoints);
+    const series = {
+      dates: ordered.map((s) => s.createdAt),
+      labels: ordered.map((s) => formatDateShort(s.createdAt)),
+      total: ordered.map((s) => s.total),
+      maxTotal: ordered.length ? ordered[ordered.length - 1].maxTotal : DIMENSIONS.length * 5,
+      dimensions: {}
+    };
+    DIMENSIONS.forEach((d) => {
+      series.dimensions[d.key] = ordered.map((s) =>
+        s.dimensions && s.dimensions[d.key] != null ? s.dimensions[d.key] : null
+      );
+    });
+    return series;
+  }
+
+  function formatDateShort(iso) {
+    const d = new Date(iso);
+    return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }
 
   function escapeHtml(str) {
@@ -136,12 +197,7 @@ const ReviewScoring = (function () {
       `;
     }).join("");
 
-    const recentForTrend = scores.slice(0, 10).reverse();
-    const trendColsHtml = recentForTrend.map((s) => {
-      const h = Math.max(4, (s.total / s.maxTotal) * 60);
-      const c = s === recentForTrend[recentForTrend.length - 1] ? "var(--gold)" : "var(--accent)";
-      return `<div class="score-trend-col" style="height:${h}px;background:${c};opacity:${s === recentForTrend[recentForTrend.length - 1] ? 1 : 0.6}"></div>`;
-    }).join("");
+    const dimTrendHtml = renderDimensionTrendComparison(scores, "compact");
 
     container.innerHTML = `
       <div class="score-summary-card">
@@ -155,17 +211,8 @@ const ReviewScoring = (function () {
           </div>
         </div>
         ${latest.note ? `<div class="score-summary-note">${escapeHtml(latest.note)}</div>` : ""}
-        <div class="score-summary-date">${formatDate(latest.createdAt)}</div>
-        ${scores.length >= 2 ? `
-          <div class="score-trend-section">
-            <h4>评分趋势（最近 ${recentForTrend.length} 次）</h4>
-            <div class="score-trend-bar">${trendColsHtml}</div>
-            <div class="score-trend-avg">
-              <span>平均 <strong>${avg.toFixed(1)}</strong> / ${latest.maxTotal}</span>
-              <span class="score-trend-direction ${trendCls}">${trendLabel[trend]}</span>
-            </div>
-          </div>
-        ` : ""}
+        <div class="score-summary-date">${formatDate(latest.createdAt)} · 共 ${scores.length} 次评分 · 平均 <strong>${avg.toFixed(1)}</strong> <span class="score-trend-direction ${trendCls} score-trend-inline">${trendLabel[trend]}</span></div>
+        ${dimTrendHtml}
       </div>
     `;
   }
@@ -195,8 +242,7 @@ const ReviewScoring = (function () {
     `).join("");
 
     const scores = getScoresForAction(activeId);
-    const latestTotal = scores.length ? scores[0].total : 0;
-    const latestMax = DIMENSIONS.length * 5;
+    const dimTrendFullHtml = renderDimensionTrendComparison(scores, "full");
 
     panel.innerHTML = `
       <div class="review-score-form-section">
@@ -224,6 +270,7 @@ const ReviewScoring = (function () {
 
       <div class="score-history-section">
         <h3>历史评分记录（${scores.length}）</h3>
+        ${dimTrendFullHtml}
         ${scores.length ? renderScoreHistoryList(scores) : `<div class="score-history-empty">暂无历史评分记录</div>`}
       </div>
     `;
@@ -236,15 +283,16 @@ const ReviewScoring = (function () {
       <div class="score-history-list">
         ${scores.map((s) => {
           const dimRowsHtml = DIMENSIONS.map((d) => {
-            const val = s.dimensions[d.key] || 0;
+            const hasVal = s.dimensions && s.dimensions[d.key] != null;
+            const val = hasVal ? s.dimensions[d.key] : 0;
             const pct = (val / 5) * 100;
             return `
-              <div class="score-dim-row">
+              <div class="score-dim-row ${!hasVal ? "score-dim-row-missing" : ""}">
                 <span class="score-dim-label">${d.label}</span>
                 <div class="score-dim-bar-track">
                   <div class="score-dim-bar-fill ${d.fillClass}" style="width:${pct}%"></div>
                 </div>
-                <span class="score-dim-value">${val}</span>
+                <span class="score-dim-value">${hasVal ? val : '<span class="muted">—</span>'}</span>
               </div>
             `;
           }).join("");
@@ -358,6 +406,91 @@ const ReviewScoring = (function () {
 
   function bindEvents() {}
 
+  function renderDimensionTrendComparison(scores, variant = "compact") {
+    if (!scores || scores.length < 2) return "";
+    const series = buildTrendSeries(scores, 10);
+    const allTrends = calcAllDimensionTrends(scores);
+    const trendLabelMap = { up: "↑ 上升", down: "↓ 下降", flat: "→ 持平" };
+    const maxVal = 5;
+
+    let dimRowsHtml = "";
+    DIMENSIONS.forEach((d) => {
+      const vals = series.dimensions[d.key];
+      const sparkHtml = vals.map((v, i) => {
+        if (v == null) {
+          return `<div class="dim-trend-col dim-trend-col-missing" title="该次评分缺少此维度"></div>`;
+        }
+        const h = Math.max(3, (v / maxVal) * 48);
+        const isLatest = i === vals.length - 1;
+        return `<div class="dim-trend-col" style="height:${h}px;background:${d.color};opacity:${isLatest ? 1 : 0.55}" title="${series.labels[i]}: ${v}分"></div>`;
+      }).join("");
+
+      const dimTrend = allTrends[d.key] || { trend: "flat", diff: 0, dataPoints: vals.filter(v => v != null).length };
+      const hasEnoughData = dimTrend.dataPoints >= 2;
+      const trendCls = hasEnoughData ? dimTrend.trend : "flat";
+      const trendText = hasEnoughData ? trendLabelMap[dimTrend.trend] : "数据不足";
+      const diffText = hasEnoughData && dimTrend.diff !== 0 ? `${dimTrend.diff > 0 ? "+" : ""}${dimTrend.diff.toFixed(1)}` : "";
+
+      const latestVal = vals.filter(v => v != null).slice(-1)[0];
+      const avgVal = calcDimensionAverage(scores, d.key);
+
+      dimRowsHtml += `
+        <div class="dim-trend-row">
+          <div class="dim-trend-label" style="color:${d.color}">${d.label}</div>
+          <div class="dim-trend-spark">${sparkHtml}</div>
+          <div class="dim-trend-value">
+            <span class="dim-trend-latest">${latestVal != null ? latestVal : "-"}</span>
+            <span class="dim-trend-avg muted">${avgVal != null ? "均" + avgVal.toFixed(1) : ""}</span>
+          </div>
+          <div class="score-trend-direction ${trendCls} dim-trend-dir">
+            ${trendText}${diffText ? ` <span class="dim-trend-diff">(${diffText})</span>` : ""}
+          </div>
+        </div>
+      `;
+    });
+
+    if (variant === "compact") {
+      return `
+        <div class="dim-trend-compact dim-trend-section">
+          <h4>维度趋势对比（最近 ${series.labels.length} 次）</h4>
+          <div class="dim-trend-rows">${dimRowsHtml}</div>
+        </div>
+      `;
+    }
+
+    const totalColsHtml = series.total.map((t, i) => {
+      const h = Math.max(4, (t / series.maxTotal) * 56);
+      const isLatest = i === series.total.length - 1;
+      const c = isLatest ? "var(--gold)" : "var(--accent)";
+      return `<div class="dim-trend-col" style="height:${h}px;background:${c};opacity:${isLatest ? 1 : 0.6}" title="${series.labels[i]}: 总分 ${t}/${series.maxTotal}"></div>`;
+    }).join("");
+
+    const totalTrend = allTrends.total;
+    const totalAvg = calcAverage(scores);
+    const latestTotal = scores[0] ? scores[0].total : 0;
+
+    return `
+      <div class="dim-trend-section dim-trend-full">
+        <div class="dim-trend-header">
+          <h4>维度趋势对比（最近 ${series.labels.length} 次评分）</h4>
+          <div class="dim-trend-labels-row">
+            ${series.labels.map((l, i) => `<span class="dim-trend-xlabel">${l}</span>`).join("")}
+          </div>
+        </div>
+        <div class="dim-trend-total-row">
+          <div class="dim-trend-label"><strong>总分</strong></div>
+          <div class="dim-trend-spark">${totalColsHtml}</div>
+          <div class="dim-trend-value">
+            <span class="dim-trend-latest">${latestTotal}</span>
+            <span class="dim-trend-avg muted">均${totalAvg.toFixed(1)}</span>
+          </div>
+          <div class="score-trend-direction ${totalTrend} dim-trend-dir">${trendLabelMap[totalTrend]}</div>
+        </div>
+        <div class="dim-trend-rows">${dimRowsHtml}</div>
+      </div>
+    `;
+  }
+
   function renderAll() {
     renderScoreForm();
     renderScoreSummary();
@@ -370,9 +503,14 @@ const ReviewScoring = (function () {
     getScoresForAction,
     calcAverage,
     calcTrend,
+    calcDimensionAverage,
+    calcDimensionTrend,
+    calcAllDimensionTrends,
+    buildTrendSeries,
     renderAll,
     renderScoreSummary,
     renderScoreForm,
+    renderDimensionTrendComparison,
     DIMENSIONS
   };
 })();

@@ -598,3 +598,185 @@
     font-size: 22px;
   }
 }
+
+.dim-trend-section {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.dim-trend-section h4 {
+  color: var(--accent);
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.dim-trend-rows {
+  display: grid;
+  gap: 8px;
+}
+
+.dim-trend-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 90px auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.dim-trend-total-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 90px auto;
+  gap: 10px;
+  align-items: center;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px dashed var(--line);
+}
+
+.dim-trend-label {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.dim-trend-spark {
+  display: flex;
+  gap: 2px;
+  align-items: flex-end;
+  height: 48px;
+  min-width: 60px;
+}
+
+.dim-trend-total-row .dim-trend-spark {
+  height: 56px;
+}
+
+.dim-trend-col {
+  flex: 1;
+  min-width: 4px;
+  max-width: 14px;
+  border-radius: 2px 2px 0 0;
+  transition: height 0.3s ease, opacity 0.15s;
+}
+
+.dim-trend-col-missing {
+  background: repeating-linear-gradient(45deg, #e0d5db, #e0d5db 3px, #f0e6eb 3px, #f0e6eb 6px) !important;
+  opacity: 0.5;
+  min-height: 3px;
+  height: 6px !important;
+}
+
+.dim-trend-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-family: "SF Mono", "Consolas", monospace;
+  font-size: 12px;
+}
+
+.dim-trend-latest {
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.dim-trend-avg {
+  font-size: 11px;
+}
+
+.dim-trend-dir {
+  font-size: 11px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.dim-trend-diff {
+  opacity: 0.8;
+  font-family: "SF Mono", "Consolas", monospace;
+}
+
+.dim-trend-full .dim-trend-header {
+  margin-bottom: 10px;
+}
+
+.dim-trend-full .dim-trend-header h4 {
+  margin-bottom: 6px;
+}
+
+.dim-trend-labels-row {
+  display: flex;
+  gap: 2px;
+  padding-left: 90px;
+  padding-right: 120px;
+}
+
+.dim-trend-xlabel {
+  flex: 1;
+  min-width: 4px;
+  max-width: 14px;
+  font-size: 9px;
+  color: var(--muted);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.score-trend-inline {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  font-size: 11px;
+  vertical-align: middle;
+}
+
+.score-dim-row-missing .score-dim-label {
+  opacity: 0.5;
+  font-style: italic;
+}
+
+.score-dim-row-missing .score-dim-bar-track {
+  background: repeating-linear-gradient(45deg, #f0e6eb, #f0e6eb 3px, #f7f0f4 3px, #f7f0f4 6px);
+}
+
+@media (max-width: 1160px) {
+  .dim-trend-row,
+  .dim-trend-total-row {
+    grid-template-columns: 70px 1fr 70px auto;
+    gap: 6px;
+  }
+  .dim-trend-labels-row {
+    padding-left: 76px;
+    padding-right: 100px;
+  }
+}
+
+@media (max-width: 640px) {
+  .dim-trend-row,
+  .dim-trend-total-row {
+    grid-template-columns: 64px 1fr;
+    grid-template-rows: auto auto;
+    gap: 4px 8px;
+  }
+  .dim-trend-row .dim-trend-value,
+  .dim-trend-total-row .dim-trend-value {
+    grid-column: 2;
+    grid-row: 2;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+  .dim-trend-row .dim-trend-dir,
+  .dim-trend-total-row .dim-trend-dir {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    justify-self: start;
+    margin-top: 2px;
+  }
+  .dim-trend-labels-row {
+    display: none;
+  }
+}
