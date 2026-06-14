@@ -215,15 +215,23 @@ const StoryboardTimeline = (function () {
   }
 
   function syncFrameAnnotations(frameId, oldTime, newTime) {
-    if (!frameId || newTime == null) return;
+    if (!frameId || newTime == null) return 0;
+    let updatedCount = 0;
     getAnnotations().forEach((ann) => {
       const isLinked = ann.frameId === frameId;
       const isLegacyMatch = !ann.frameId && oldTime != null && ann.timestamp != null && Math.abs(ann.timestamp - oldTime) < 1.5;
       if (isLinked || isLegacyMatch) {
         ann.frameId = frameId;
         ann.timestamp = newTime;
+        updatedCount++;
       }
     });
+    return updatedCount;
+  }
+
+  function countLinkedAnnotations(frameId) {
+    if (!frameId) return 0;
+    return getAnnotations().filter((ann) => ann.frameId === frameId).length;
   }
 
   function syncFramesOrder() {
@@ -353,6 +361,8 @@ const StoryboardTimeline = (function () {
     const frameIndex = action.frames.findIndex((f) => f.id === frameId);
     if (frameIndex === -1) return false;
 
+    const linkedCount = countLinkedAnnotations(frameId);
+
     saveSnapshot("delete-frame");
 
     action.frames = action.frames.filter((f) => f.id !== frameId);
@@ -365,7 +375,11 @@ const StoryboardTimeline = (function () {
     if (state.editingTimeFrameId === frameId) state.editingTimeFrameId = null;
 
     commitChanges();
-    showSnackbar("已删除关键帧", "info");
+    if (linkedCount > 0) {
+      showSnackbar(`已删除关键帧，${linkedCount} 个关联批注已解除关联`, "info");
+    } else {
+      showSnackbar("已删除关键帧", "info");
+    }
     return true;
   }
 
@@ -380,7 +394,10 @@ const StoryboardTimeline = (function () {
     const oldTime = getFrameTimeSeconds(frame);
     Object.assign(frame, updates, { updatedAt: new Date().toISOString() });
     if (Object.prototype.hasOwnProperty.call(updates, "time")) {
-      syncFrameAnnotations(frameId, oldTime, getFrameTimeSeconds(frame));
+      const updated = syncFrameAnnotations(frameId, oldTime, getFrameTimeSeconds(frame));
+      if (updated > 0) {
+        showSnackbar(`已同步更新 ${updated} 个关联批注的时间`, "info");
+      }
     }
 
     commitChanges();
@@ -402,7 +419,10 @@ const StoryboardTimeline = (function () {
     const oldTime = getFrameTimeSeconds(frame);
     frame.time = newTimeStr.trim();
     frame.updatedAt = new Date().toISOString();
-    syncFrameAnnotations(frameId, oldTime, getFrameTimeSeconds(frame));
+    const updated = syncFrameAnnotations(frameId, oldTime, getFrameTimeSeconds(frame));
+    if (updated > 0) {
+      showSnackbar(`已同步更新 ${updated} 个关联批注的时间`, "info");
+    }
 
     commitChanges();
     return true;
@@ -470,7 +490,10 @@ const StoryboardTimeline = (function () {
     saveSnapshot("move-frame");
     frame.time = formatTime(clampedTime);
     frame.updatedAt = new Date().toISOString();
-    syncFrameAnnotations(frameId, oldTime, getFrameTimeSeconds(frame));
+    const updated = syncFrameAnnotations(frameId, oldTime, getFrameTimeSeconds(frame));
+    if (updated > 0) {
+      showSnackbar(`已同步更新 ${updated} 个关联批注的时间`, "info");
+    }
 
     commitChanges();
     return true;

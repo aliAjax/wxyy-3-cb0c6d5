@@ -411,6 +411,17 @@
                 <input type="text" id="annotationTimestamp" readonly>
               </label>
             </div>
+            <div class="annotation-frame-link" id="annotationFrameLink" hidden>
+              <label>
+                <input type="checkbox" id="annotationLinkFrame">
+                <span>关联到关键帧</span>
+              </label>
+              <div class="frame-link-info" id="frameLinkInfo">
+                <span class="frame-link-name" id="frameLinkName"></span>
+                <span class="frame-link-time" id="frameLinkTime"></span>
+              </div>
+              <p class="frame-link-hint" id="frameLinkHint"></p>
+            </div>
             <div class="modal-actions">
               <button type="button" class="btn-danger" id="deleteAnnotationBtn" hidden>删除批注</button>
               <button type="button" class="btn-secondary" data-close-annotation>取消</button>

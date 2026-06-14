@@ -40,6 +40,12 @@ const directionSelect = document.querySelector("#directionSelect");
 const annotationNote = document.querySelector("#annotationNote");
 const annotationVideoInfo = document.querySelector("#annotationVideoInfo");
 const annotationTimestamp = document.querySelector("#annotationTimestamp");
+const annotationFrameLink = document.querySelector("#annotationFrameLink");
+const annotationLinkFrame = document.querySelector("#annotationLinkFrame");
+const frameLinkInfo = document.querySelector("#frameLinkInfo");
+const frameLinkName = document.querySelector("#frameLinkName");
+const frameLinkTime = document.querySelector("#frameLinkTime");
+const frameLinkHint = document.querySelector("#frameLinkHint");
 const deleteAnnotationBtn = document.querySelector("#deleteAnnotationBtn");
 
 const editMediaInput = document.querySelector("#editMediaInput");
@@ -279,6 +285,32 @@ function openAnnotationModal(annotation = null) {
     annotationTimestamp.value = time != null ? formatDuration(time) : "--:--";
   }
 
+  const action = activeAction();
+  const hasFrames = action && Array.isArray(action.frames) && action.frames.length > 0;
+  annotationFrameLink.hidden = !isVideo || !hasFrames;
+  
+  if (isVideo && hasFrames) {
+    const timestamp = annotation?.timestamp != null ? annotation.timestamp : getCurrentVideoTime();
+    const linkedFrame = annotation?.frameId ? getFrameById(annotation.frameId) : null;
+    const nearestFrame = !linkedFrame && timestamp != null ? getNearestFrame(timestamp) : null;
+    const displayFrame = linkedFrame || nearestFrame;
+    
+    annotationLinkFrame.checked = !!(annotation?.frameId) || !!nearestFrame;
+    frameLinkInfo.style.display = displayFrame ? "" : "none";
+    
+    if (displayFrame) {
+      frameLinkName.textContent = displayFrame.stage || "未命名";
+      frameLinkTime.textContent = displayFrame.time || "";
+      if (linkedFrame) {
+        frameLinkHint.textContent = "已关联到此关键帧，调整关键帧时间时批注会自动跟随";
+      } else {
+        frameLinkHint.textContent = "检测到附近有关键帧，勾选后批注将跟随关键帧时间";
+      }
+    } else {
+      frameLinkHint.textContent = "当前时间点附近没有关键帧，可稍后在分镜工作台中关联";
+    }
+  }
+
   annotationModal.hidden = false;
   setTimeout(() => annotationNote.focus(), 50);
 }
@@ -289,12 +321,42 @@ function closeAnnotationModal() {
   annotationForm.reset();
 }
 
+function getNearestFrame(timestamp) {
+  if (!window.StoryboardTimeline || timestamp == null) return null;
+  const action = activeAction();
+  if (!action || !Array.isArray(action.frames)) return null;
+  
+  let nearest = null;
+  let nearestDelta = Infinity;
+  
+  action.frames.forEach((frame) => {
+    const frameTime = window.StoryboardTimeline.parseTimeString(frame.time);
+    if (frameTime == null) return;
+    const delta = Math.abs(frameTime - timestamp);
+    if (delta < nearestDelta) {
+      nearest = frame;
+      nearestDelta = delta;
+    }
+  });
+  
+  return nearestDelta < 1.5 ? nearest : null;
+}
+
+function getFrameById(frameId) {
+  const action = activeAction();
+  if (!action || !Array.isArray(action.frames)) return null;
+  return action.frames.find((f) => f.id === frameId) || null;
+}
+
 function createAnnotation(x, y) {
   const action = activeAction();
   if (!action) return;
   ensureActionAnnotations(action);
 
   const isVideo = isVideoMedia();
+  const timestamp = isVideo ? getCurrentVideoTime() : null;
+  const nearestFrame = timestamp != null ? getNearestFrame(timestamp) : null;
+  
   const annotation = {
     id: crypto.randomUUID(),
     x: Math.max(0, Math.min(100, x)),
@@ -302,7 +364,8 @@ function createAnnotation(x, y) {
     bodyPart: "左手",
     direction: "",
     note: "",
-    timestamp: isVideo ? getCurrentVideoTime() : null,
+    timestamp: timestamp,
+    frameId: nearestFrame ? nearestFrame.id : null,
     createdAt: new Date().toISOString()
   };
 
@@ -327,11 +390,40 @@ function updateAnnotationFromForm() {
     const ann = action.annotations.find((a) => a.id === editingAnnotationId);
     if (ann) {
       Object.assign(ann, data);
+      
+      if (!annotationFrameLink.hidden) {
+        if (annotationLinkFrame.checked) {
+          if (!ann.frameId) {
+            const nearestFrame = ann.timestamp != null ? getNearestFrame(ann.timestamp) : null;
+            if (nearestFrame) {
+              ann.frameId = nearestFrame.id;
+            }
+          }
+        } else {
+          delete ann.frameId;
+        }
+      }
+    }
+  } else {
+    const ann = action.annotations[action.annotations.length - 1];
+    if (ann) {
+      Object.assign(ann, data);
+      
+      if (!annotationFrameLink.hidden && annotationLinkFrame.checked) {
+        const nearestFrame = ann.timestamp != null ? getNearestFrame(ann.timestamp) : null;
+        if (nearestFrame) {
+          ann.frameId = nearestFrame.id;
+        }
+      }
     }
   }
+  
   save();
   closeAnnotationModal();
   renderAnnotations();
+  if (window.StoryboardTimeline && typeof window.StoryboardTimeline.renderAll === "function") {
+    window.StoryboardTimeline.renderAll();
+  }
 }
 
 function deleteAnnotation() {
@@ -344,6 +436,9 @@ function deleteAnnotation() {
   save();
   closeAnnotationModal();
   renderAnnotations();
+  if (window.StoryboardTimeline && typeof window.StoryboardTimeline.renderAll === "function") {
+    window.StoryboardTimeline.renderAll();
+  }
 }
 
 function startDrag(e, annotationId) {
@@ -439,6 +534,14 @@ function renderAnnotations() {
     const timeLabel = ann.timestamp != null ? `<div class="annotation-time">⏱ ${escapeHtml(formatDuration(ann.timestamp))}</div>` : "";
     const dirLabel = ann.direction ? `<span class="annotation-direction">${escapeHtml(ann.direction)}</span>` : "";
     const noteText = ann.note ? `<p class="annotation-note">${escapeHtml(ann.note)}</p>` : "";
+    
+    let frameLabel = "";
+    if (ann.frameId) {
+      const linkedFrame = getFrameById(ann.frameId);
+      if (linkedFrame) {
+        frameLabel = `<div class="annotation-frame-link-label">🔗 关联: ${escapeHtml(linkedFrame.stage || "未命名")} (${escapeHtml(linkedFrame.time || "")})</div>`;
+      }
+    }
 
     return `
       <div class="annotation-point ${ann.id === editingAnnotationId ? "selected" : ""}" 
@@ -452,6 +555,7 @@ function renderAnnotations() {
           </div>
           ${noteText}
           ${timeLabel}
+          ${frameLabel}
         </div>
       </div>
     `;

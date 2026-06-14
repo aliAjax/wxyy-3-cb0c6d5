@@ -1157,6 +1157,14 @@ form button {
   font-family: "SF Mono", "Consolas", monospace;
 }
 
+.annotation-frame-link-label {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+  font-size: 11px;
+  color: var(--accent);
+}
+
 .annotation-video-info {
   margin-top: 12px;
 }
@@ -1166,6 +1174,52 @@ form button {
   font-family: "SF Mono", "Consolas", monospace;
   font-weight: 600;
   color: var(--accent);
+}
+
+.annotation-frame-link {
+  margin-top: 12px;
+  padding: 10px;
+  background: #f7f0f4;
+  border-radius: 6px;
+}
+
+.annotation-frame-link > label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+.annotation-frame-link input[type="checkbox"] {
+  width: auto;
+}
+
+.frame-link-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.frame-link-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.frame-link-time {
+  font-family: "SF Mono", "Consolas", monospace;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.frame-link-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.4;
 }
 
 .annotation-layer.creating-mode {

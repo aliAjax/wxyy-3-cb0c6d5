@@ -1,5 +1,5 @@
 const ImportExport = (function () {
-  const BACKUP_VERSION = 3;
+  const BACKUP_VERSION = 4;
   const MIN_SUPPORTED_VERSION = 1;
 
   const ImportStatus = {
@@ -209,16 +209,22 @@ const ImportExport = (function () {
     if (!Array.isArray(action.annotations)) {
       action.annotations = [];
     } else {
-      action.annotations = action.annotations.filter((a) => a && typeof a === "object").map((a) => ({
-        id: a.id || crypto.randomUUID(),
-        x: typeof a.x === "number" ? Math.max(0, Math.min(100, a.x)) : 50,
-        y: typeof a.y === "number" ? Math.max(0, Math.min(100, a.y)) : 50,
-        bodyPart: a.bodyPart || "其他",
-        direction: a.direction || "",
-        note: a.note || "",
-        timestamp: typeof a.timestamp === "number" ? a.timestamp : null,
-        createdAt: a.createdAt || new Date().toISOString()
-      }));
+      action.annotations = action.annotations.filter((a) => a && typeof a === "object").map((a) => {
+        const ann = {
+          id: a.id || crypto.randomUUID(),
+          x: typeof a.x === "number" ? Math.max(0, Math.min(100, a.x)) : 50,
+          y: typeof a.y === "number" ? Math.max(0, Math.min(100, a.y)) : 50,
+          bodyPart: a.bodyPart || "其他",
+          direction: a.direction || "",
+          note: a.note || "",
+          timestamp: typeof a.timestamp === "number" ? a.timestamp : null,
+          createdAt: a.createdAt || new Date().toISOString()
+        };
+        if (a.frameId && typeof a.frameId === "string") {
+          ann.frameId = a.frameId;
+        }
+        return ann;
+      });
     }
     if (!action.createdAt || isNaN(new Date(action.createdAt).getTime())) {
       action.createdAt = new Date().toISOString();
@@ -456,6 +462,21 @@ const ImportExport = (function () {
         backup.data.plans = [];
       }
       warnings.push("已从旧版本格式迁移数据（补充练习计划字段）");
+    }
+
+    if (version < 4) {
+      if (Array.isArray(backup.data.actions)) {
+        backup.data.actions.forEach((action) => {
+          if (Array.isArray(action.annotations)) {
+            action.annotations.forEach((ann) => {
+              if (ann.frameId === undefined) {
+                ann.frameId = null;
+              }
+            });
+          }
+        });
+      }
+      warnings.push("已从旧版本格式迁移数据（补充批注关联字段）");
     }
 
     return { backup, warnings };
