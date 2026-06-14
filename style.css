@@ -1364,6 +1364,84 @@ form button {
   width: min(960px, 100%);
 }
 
+.media-lib-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.media-lib-filter-group {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.media-filter-btn {
+  background: #f0e7ec;
+  color: var(--muted);
+  border: 1px solid transparent;
+  transition: all 0.15s;
+}
+
+.media-filter-btn:hover {
+  background: #e8dce3;
+  color: var(--ink);
+}
+
+.media-filter-btn.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.media-lib-sort-group {
+  flex-shrink: 0;
+}
+
+.media-sort-select {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: white;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.media-sort-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(141, 40, 71, 0.15);
+}
+
+.media-lib-stats {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 14px;
+  background: #fdf9fb;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+
+.media-lib-stats strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.media-lib-filter-hint {
+  color: var(--gold);
+  font-weight: 500;
+}
+
 .media-lib-warnings {
   margin-bottom: 16px;
   display: grid;
@@ -1568,9 +1646,48 @@ form button {
     justify-content: center;
   }
 
-  .media-library-grid {
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  .media-lib-toolbar {
+    flex-direction: column;
+    align-items: stretch;
     gap: 10px;
+  }
+
+  .media-lib-filter-group {
+    justify-content: flex-start;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 2px;
+  }
+
+  .media-filter-btn {
+    flex-shrink: 0;
+  }
+
+  .media-lib-sort-group {
+    width: 100%;
+  }
+
+  .media-sort-select {
+    width: 100%;
+  }
+
+  .media-lib-stats {
+    gap: 10px;
+    font-size: 12px;
+    padding: 8px 12px;
+  }
+
+  .media-library-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 10px;
+  }
+
+  .lib-media-name {
+    font-size: 12px;
+  }
+
+  .lib-media-meta {
+    font-size: 10px;
   }
 
   .toast-container {

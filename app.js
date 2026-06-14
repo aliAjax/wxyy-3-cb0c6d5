@@ -52,7 +52,12 @@ const mediaLibraryGrid = document.querySelector("#mediaLibraryGrid");
 const storageInfoEl = document.querySelector("#storageInfo");
 const mediaLibWarnings = document.querySelector("#mediaLibWarnings");
 const cleanupOrphanBtn = document.querySelector("#cleanupOrphanBtn");
+const mediaLibStats = document.querySelector("#mediaLibStats");
+const mediaSortSelect = document.querySelector("#mediaSortSelect");
 const toastContainer = document.querySelector("#toastContainer");
+
+let mediaFilter = "all";
+let mediaSort = "createdAt-desc";
 
 let pendingMedia = null;
 let pendingEditMedia = null;
@@ -1725,6 +1730,40 @@ function closeMediaLibrary() {
   if (mediaLibraryModal) mediaLibraryModal.hidden = true;
 }
 
+function applyMediaFilter(mediaList, usedIds) {
+  return mediaList.filter((m) => {
+    switch (mediaFilter) {
+      case "image":
+        return MediaLibrary.isImageType(m.type);
+      case "video":
+        return MediaLibrary.isVideoType(m.type);
+      case "used":
+        return usedIds.has(m.id);
+      case "orphan":
+        return !usedIds.has(m.id);
+      default:
+        return true;
+    }
+  });
+}
+
+function sortMediaList(mediaList) {
+  const [field, order] = mediaSort.split("-");
+  const sorted = [...mediaList];
+  sorted.sort((a, b) => {
+    let valA, valB;
+    if (field === "size") {
+      valA = a.size || 0;
+      valB = b.size || 0;
+    } else {
+      valA = new Date(a.createdAt).getTime();
+      valB = new Date(b.createdAt).getTime();
+    }
+    return order === "desc" ? valB - valA : valA - valB;
+  });
+  return sorted;
+}
+
 async function renderMediaLibrary() {
   const allMedia = await MediaLibrary.getAllMedia();
   const storageInfo = await MediaLibrary.getStorageInfo();
@@ -1740,14 +1779,14 @@ async function renderMediaLibrary() {
     }
   }
 
-  const orphanCount = allMedia.filter((m) => !usedIds.has(m.id)).length;
+  const totalOrphanCount = allMedia.filter((m) => !usedIds.has(m.id)).length;
   if (mediaLibWarnings) {
     const warnings = [];
     if (storageInfo.usageRatio > 0.9) {
       warnings.push(`<div class="media-lib-warning danger">⚠ 存储容量警告：已使用 ${(storageInfo.usageRatio * 100).toFixed(0)}%，请及时清理不需要的素材</div>`);
     }
-    if (orphanCount > 0) {
-      warnings.push(`<div class="media-lib-warning info">ℹ 发现 ${orphanCount} 个孤立素材（未被任何动作引用），可点击清理按钮释放空间</div>`);
+    if (totalOrphanCount > 0 && mediaFilter !== "orphan") {
+      warnings.push(`<div class="media-lib-warning info">ℹ 发现 ${totalOrphanCount} 个孤立素材（未被任何动作引用），可点击清理按钮释放空间</div>`);
     }
     if (warnings.length) {
       mediaLibWarnings.innerHTML = warnings.join("");
@@ -1758,14 +1797,37 @@ async function renderMediaLibrary() {
     }
   }
 
+  if (cleanupOrphanBtn) {
+    cleanupOrphanBtn.disabled = totalOrphanCount === 0;
+    cleanupOrphanBtn.style.opacity = totalOrphanCount === 0 ? "0.5" : "1";
+    cleanupOrphanBtn.style.cursor = totalOrphanCount === 0 ? "not-allowed" : "pointer";
+  }
+
+  const filteredMedia = applyMediaFilter(allMedia, usedIds);
+  const sortedMedia = sortMediaList(filteredMedia);
+
+  if (mediaLibStats) {
+    const filteredSize = filteredMedia.reduce((sum, m) => sum + (m.size || 0), 0);
+    mediaLibStats.innerHTML = `
+      <span>共 <strong>${filteredMedia.length}</strong> 个素材</span>
+      <span>合计 <strong>${formatSize(filteredSize)}</strong></span>
+      ${mediaFilter !== "all" ? `<span class="media-lib-filter-hint">（筛选自 ${allMedia.length} 个全部素材）</span>` : ""}
+    `;
+  }
+
   if (mediaLibraryGrid) {
-    if (!allMedia.length) {
-      mediaLibraryGrid.innerHTML = `<div class="media-lib-empty"><p>素材库为空</p><p class="muted">上传动作时，素材会自动保存到此处</p></div>`;
+    if (!sortedMedia.length) {
+      let emptyText = "素材库为空";
+      let subText = "上传动作时，素材会自动保存到此处";
+      if (mediaFilter !== "all") {
+        emptyText = "没有找到符合条件的素材";
+        subText = "试试切换筛选条件";
+      }
+      mediaLibraryGrid.innerHTML = `<div class="media-lib-empty"><p>${emptyText}</p><p class="muted">${subText}</p></div>`;
       return;
     }
 
-    const sorted = [...allMedia].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    mediaLibraryGrid.innerHTML = sorted.map((m) => {
+    mediaLibraryGrid.innerHTML = sortedMedia.map((m) => {
       const isOrphan = !usedIds.has(m.id);
       const isVideo = MediaLibrary.isVideoType(m.type);
       const thumb = m.thumbnail;
@@ -1841,6 +1903,20 @@ cleanupOrphanBtn?.addEventListener("click", async () => {
   const deleted = await MediaLibrary.cleanupOrphanedMedia(state);
   showToast(`已清理 ${deleted.length} 个孤立素材`, "success");
   await renderMediaLibrary();
+});
+
+document.querySelectorAll(".media-filter-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".media-filter-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    mediaFilter = btn.dataset.filter;
+    renderMediaLibrary();
+  });
+});
+
+mediaSortSelect?.addEventListener("change", () => {
+  mediaSort = mediaSortSelect.value;
+  renderMediaLibrary();
 });
 
 mediaLibraryModal?.addEventListener("click", (e) => {

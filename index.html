@@ -517,6 +517,24 @@
         </header>
         <div class="modal-body">
           <div id="mediaLibWarnings" class="media-lib-warnings" hidden></div>
+          <div class="media-lib-toolbar">
+            <div class="media-lib-filter-group">
+              <button type="button" class="btn-small media-filter-btn active" data-filter="all">全部</button>
+              <button type="button" class="btn-small media-filter-btn" data-filter="image">图片</button>
+              <button type="button" class="btn-small media-filter-btn" data-filter="video">视频</button>
+              <button type="button" class="btn-small media-filter-btn" data-filter="used">已引用</button>
+              <button type="button" class="btn-small media-filter-btn" data-filter="orphan">孤立素材</button>
+            </div>
+            <div class="media-lib-sort-group">
+              <select id="mediaSortSelect" class="media-sort-select">
+                <option value="createdAt-desc">最新创建</option>
+                <option value="createdAt-asc">最早创建</option>
+                <option value="size-desc">最大文件</option>
+                <option value="size-asc">最小文件</option>
+              </select>
+            </div>
+          </div>
+          <div class="media-lib-stats" id="mediaLibStats"></div>
           <div id="mediaLibraryGrid" class="media-library-grid"></div>
         </div>
       </div>
