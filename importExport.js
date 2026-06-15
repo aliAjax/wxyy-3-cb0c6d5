@@ -20,6 +20,15 @@ const ImportExport = (function () {
   let currentSection = "actions";
   let parsedBackupData = null;
   let lastImportResult = null;
+  let expandedConflictIds = new Set();
+
+  const SectionType = {
+    ACTIONS: "actions",
+    CHOREOGRAPHIES: "choreographies",
+    SCORES: "scores",
+    PLANS: "plans",
+    MEDIA: "media"
+  };
 
   function escapeHtml(str) {
     if (str == null) return "";
@@ -531,6 +540,308 @@ const ImportExport = (function () {
     return item.status;
   }
 
+  function computeSectionStats(section, items, overwriteEnabled) {
+    const stats = { add: 0, overwrite: 0, skip: 0, conflict: 0, error: 0, total: items.length };
+    items.forEach((item) => {
+      const eff = getEffectiveStatus(item, overwriteEnabled);
+      stats[eff] = (stats[eff] || 0) + 1;
+    });
+    return stats;
+  }
+
+  function computeAllSectionStats(preview, overwriteEnabled, includeMedia) {
+    const sectionStats = {};
+    [SectionType.ACTIONS, SectionType.CHOREOGRAPHIES, SectionType.SCORES, SectionType.PLANS].forEach((section) => {
+      sectionStats[section] = computeSectionStats(section, preview[section] || [], overwriteEnabled);
+    });
+    if (includeMedia && preview.media) {
+      sectionStats[SectionType.MEDIA] = {
+        add: preview.media.available.length,
+        overwrite: 0,
+        skip: preview.media.existing.length,
+        conflict: 0,
+        error: preview.media.missing.length,
+        total: preview.media.available.length + preview.media.existing.length + preview.media.missing.length
+      };
+    } else {
+      sectionStats[SectionType.MEDIA] = {
+        add: 0, overwrite: 0, skip: 0, conflict: 0, error: 0,
+        total: preview.media ? (preview.media.available.length + preview.media.existing.length + preview.media.missing.length) : 0
+      };
+    }
+    return sectionStats;
+  }
+
+  function getSectionLabel(section) {
+    const labels = {
+      [SectionType.ACTIONS]: "动作",
+      [SectionType.CHOREOGRAPHIES]: "编排",
+      [SectionType.SCORES]: "评分",
+      [SectionType.PLANS]: "练习计划",
+      [SectionType.MEDIA]: "素材"
+    };
+    return labels[section] || section;
+  }
+
+  function getConflictItemId(section, index) {
+    return `conflict-${section}-${index}`;
+  }
+
+  function renderConflictDetail(item, section, index) {
+    if (!item.existingData) return "";
+
+    const conflictId = getConflictItemId(section, index);
+    const isExpanded = expandedConflictIds.has(conflictId);
+
+    let importSummary = "";
+    let existingSummary = "";
+
+    if (section === SectionType.ACTIONS) {
+      const action = item.data;
+      const existing = item.existingData;
+      const frameCount = Array.isArray(action.frames) ? action.frames.length : 0;
+      const annCount = Array.isArray(action.annotations) ? action.annotations.length : 0;
+      const exFrameCount = Array.isArray(existing.frames) ? existing.frames.length : 0;
+      const exAnnCount = Array.isArray(existing.annotations) ? existing.annotations.length : 0;
+
+      importSummary = `
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">关键帧：</span>
+          <span class="conflict-summary-value">${frameCount} 个</span>
+        </div>
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">批注：</span>
+          <span class="conflict-summary-value">${annCount} 个</span>
+        </div>
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">创建时间：</span>
+          <span class="conflict-summary-value">${formatDate(action.createdAt)}</span>
+        </div>
+      `;
+
+      existingSummary = `
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">关键帧：</span>
+          <span class="conflict-summary-value">${exFrameCount} 个</span>
+        </div>
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">批注：</span>
+          <span class="conflict-summary-value">${exAnnCount} 个</span>
+        </div>
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">创建时间：</span>
+          <span class="conflict-summary-value">${formatDate(existing.createdAt)}</span>
+        </div>
+      `;
+    } else if (section === SectionType.CHOREOGRAPHIES) {
+      const choreo = item.data;
+      const existing = item.existingData;
+      const itemCount = Array.isArray(choreo.items) ? choreo.items.length : 0;
+      const exItemCount = Array.isArray(existing.items) ? existing.items.length : 0;
+
+      importSummary = `
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">动作数：</span>
+          <span class="conflict-summary-value">${itemCount} 个</span>
+        </div>
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">更新时间：</span>
+          <span class="conflict-summary-value">${formatDate(choreo.updatedAt)}</span>
+        </div>
+      `;
+
+      existingSummary = `
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">动作数：</span>
+          <span class="conflict-summary-value">${exItemCount} 个</span>
+        </div>
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">更新时间：</span>
+          <span class="conflict-summary-value">${formatDate(existing.updatedAt)}</span>
+        </div>
+      `;
+    } else if (section === SectionType.SCORES) {
+      const score = item.data;
+      const existing = item.existingData;
+      const scoreCount = Array.isArray(score.items) ? score.items.length : 0;
+      const exScoreCount = Array.isArray(existing.items) ? existing.items.length : 0;
+
+      importSummary = `
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">总分：</span>
+          <span class="conflict-summary-value">${score.total || 0}/${score.maxTotal || 100}</span>
+        </div>
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">评分项：</span>
+          <span class="conflict-summary-value">${scoreCount} 项</span>
+        </div>
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">评分时间：</span>
+          <span class="conflict-summary-value">${formatDate(score.createdAt)}</span>
+        </div>
+      `;
+
+      existingSummary = `
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">总分：</span>
+          <span class="conflict-summary-value">${existing.total || 0}/${existing.maxTotal || 100}</span>
+        </div>
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">评分项：</span>
+          <span class="conflict-summary-value">${exScoreCount} 项</span>
+        </div>
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">评分时间：</span>
+          <span class="conflict-summary-value">${formatDate(existing.createdAt)}</span>
+        </div>
+      `;
+    } else if (section === SectionType.PLANS) {
+      const plan = item.data;
+      const existing = item.existingData;
+
+      importSummary = `
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">日期：</span>
+          <span class="conflict-summary-value">${plan.date}</span>
+        </div>
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">类型：</span>
+          <span class="conflict-summary-value">${plan.type === "choreography" ? "编排" : "动作"}</span>
+        </div>
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">状态：</span>
+          <span class="conflict-summary-value">${plan.completed ? "已完成" : "未完成"}</span>
+        </div>
+        ${plan.goal ? `<div class="conflict-summary-row"><span class="conflict-summary-label">目标：</span><span class="conflict-summary-value">${escapeHtml(plan.goal)}</span></div>` : ""}
+      `;
+
+      existingSummary = `
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">日期：</span>
+          <span class="conflict-summary-value">${existing.date}</span>
+        </div>
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">类型：</span>
+          <span class="conflict-summary-value">${existing.type === "choreography" ? "编排" : "动作"}</span>
+        </div>
+        <div class="conflict-summary-row">
+          <span class="conflict-summary-label">状态：</span>
+          <span class="conflict-summary-value">${existing.completed ? "已完成" : "未完成"}</span>
+        </div>
+        ${existing.goal ? `<div class="conflict-summary-row"><span class="conflict-summary-label">目标：</span><span class="conflict-summary-value">${escapeHtml(existing.goal)}</span></div>` : ""}
+      `;
+    }
+
+    const expandIcon = isExpanded ? "▼" : "▶";
+
+    return `
+      <button type="button" class="conflict-expand-btn" data-conflict-expand="${conflictId}">
+        <span class="conflict-expand-icon">${expandIcon}</span>
+        <span class="conflict-expand-text">${isExpanded ? "收起冲突详情" : "查看冲突详情"}</span>
+      </button>
+      <div class="conflict-detail ${isExpanded ? "expanded" : ""}" data-conflict-detail="${conflictId}">
+        <div class="conflict-detail-grid">
+          <div class="conflict-detail-col conflict-detail-import">
+            <div class="conflict-detail-header">
+              <span class="conflict-detail-badge import-badge">导入数据</span>
+              <span class="conflict-detail-name">${escapeHtml(item.data?.name || item.data?.date || "(无名称)")}</span>
+            </div>
+            <div class="conflict-detail-body">
+              ${importSummary}
+            </div>
+          </div>
+          <div class="conflict-detail-divider">
+            <span class="conflict-detail-vs">VS</span>
+          </div>
+          <div class="conflict-detail-col conflict-detail-existing">
+            <div class="conflict-detail-header">
+              <span class="conflict-detail-badge existing-badge">现有数据</span>
+              <span class="conflict-detail-name">${escapeHtml(item.existingData?.name || item.existingData?.date || "(无名称)")}</span>
+            </div>
+            <div class="conflict-detail-body">
+              ${existingSummary}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function computeDiff(item, section) {
+    if (!item || !item.data || !item.existingData) return null;
+
+    const diff = {
+      fields: [],
+      hasMajorChanges: false
+    };
+
+    const data = item.data;
+    const existing = item.existingData;
+
+    if (section === SectionType.ACTIONS) {
+      if (data.name !== existing.name) {
+        diff.fields.push({ key: "name", label: "名称", old: existing.name, new: data.name, type: "text" });
+      }
+      if (data.tags !== existing.tags) {
+        diff.fields.push({ key: "tags", label: "标签", old: existing.tags || "(无)", new: data.tags || "(无)", type: "text" });
+      }
+      const oldFrames = Array.isArray(existing.frames) ? existing.frames.length : 0;
+      const newFrames = Array.isArray(data.frames) ? data.frames.length : 0;
+      if (oldFrames !== newFrames) {
+        diff.fields.push({ key: "frames", label: "关键帧数量", old: `${oldFrames} 个`, new: `${newFrames} 个`, type: "count" });
+        diff.hasMajorChanges = true;
+      }
+      const oldAnns = Array.isArray(existing.annotations) ? existing.annotations.length : 0;
+      const newAnns = Array.isArray(data.annotations) ? data.annotations.length : 0;
+      if (oldAnns !== newAnns) {
+        diff.fields.push({ key: "annotations", label: "批注数量", old: `${oldAnns} 个`, new: `${newAnns} 个`, type: "count" });
+        diff.hasMajorChanges = true;
+      }
+      const oldMediaId = existing.mediaId || (existing.mediaRef && existing.mediaRef.id);
+      const newMediaId = data.mediaId || (data.mediaRef && data.mediaRef.id);
+      if (oldMediaId !== newMediaId) {
+        diff.fields.push({ key: "media", label: "关联素材", old: oldMediaId ? "已关联" : "无", new: newMediaId ? "已关联" : "无", type: "media" });
+        diff.hasMajorChanges = true;
+      }
+    } else if (section === SectionType.CHOREOGRAPHIES) {
+      if (data.name !== existing.name) {
+        diff.fields.push({ key: "name", label: "名称", old: existing.name, new: data.name, type: "text" });
+      }
+      if (data.description !== existing.description) {
+        diff.fields.push({ key: "description", label: "描述", old: existing.description || "(无)", new: data.description || "(无)", type: "text" });
+      }
+      const oldItems = Array.isArray(existing.items) ? existing.items.length : 0;
+      const newItems = Array.isArray(data.items) ? data.items.length : 0;
+      if (oldItems !== newItems) {
+        diff.fields.push({ key: "items", label: "动作序列长度", old: `${oldItems} 个`, new: `${newItems} 个`, type: "count" });
+        diff.hasMajorChanges = true;
+      }
+    } else if (section === SectionType.SCORES) {
+      if (data.total !== existing.total || data.maxTotal !== existing.maxTotal) {
+        diff.fields.push({ key: "score", label: "总分", old: `${existing.total || 0}/${existing.maxTotal || 100}`, new: `${data.total || 0}/${data.maxTotal || 100}`, type: "score" });
+        diff.hasMajorChanges = true;
+      }
+      const oldItems = Array.isArray(existing.items) ? existing.items.length : 0;
+      const newItems = Array.isArray(data.items) ? data.items.length : 0;
+      if (oldItems !== newItems) {
+        diff.fields.push({ key: "items", label: "评分项数量", old: `${oldItems} 项`, new: `${newItems} 项`, type: "count" });
+      }
+    } else if (section === SectionType.PLANS) {
+      if (data.completed !== existing.completed) {
+        diff.fields.push({ key: "completed", label: "完成状态", old: existing.completed ? "已完成" : "未完成", new: data.completed ? "已完成" : "未完成", type: "status" });
+        diff.hasMajorChanges = true;
+      }
+      if (data.goal !== existing.goal) {
+        diff.fields.push({ key: "goal", label: "练习目标", old: existing.goal || "(无)", new: data.goal || "(无)", type: "text" });
+      }
+      if (data.note !== existing.note) {
+        diff.fields.push({ key: "note", label: "备注", old: existing.note || "(无)", new: data.note || "(无)", type: "text" });
+      }
+    }
+
+    return diff;
+  }
+
   async function analyzeImport(backup) {
     const appState = getAppState();
     const result = {
@@ -550,6 +861,12 @@ const ImportExport = (function () {
         skip: 0,
         conflict: 0,
         error: 0
+      },
+      referenceChecks: {
+        mediaIds: { valid: [], invalid: [] },
+        actionRefs: { valid: [], invalid: [] },
+        choreoRefs: { valid: [], invalid: [] },
+        planRefs: { valid: [], invalid: [] }
       }
     };
 
@@ -592,15 +909,26 @@ const ImportExport = (function () {
         status = ImportStatus.ADD;
       }
 
-      result.stats[status]++;
-      result.actions.push({
+      const existingData = idExists ? appState.actions.find((a) => a.id === action.id) : (nameConflict || null);
+      const previewItem = {
         status,
         data: action,
         message,
-        existingData: idExists ? appState.actions.find((a) => a.id === action.id) : (nameConflict || null),
+        existingData,
         nameConflict: !!nameConflict && !idExists,
-        resolveMode: status === ImportStatus.CONFLICT ? ResolveMode.ADD_COPY : null
-      });
+        resolveMode: status === ImportStatus.CONFLICT ? ResolveMode.ADD_COPY : null,
+        section: SectionType.ACTIONS
+      };
+      if (existingData && (status === ImportStatus.CONFLICT || status === ImportStatus.OVERWRITE)) {
+        previewItem.diff = computeDiff(previewItem, SectionType.ACTIONS);
+      }
+      result.stats[status]++;
+      result.actions.push(previewItem);
+
+      if (action.mediaId || (action.mediaRef && action.mediaRef.id)) {
+        const mediaId = action.mediaId || (action.mediaRef && action.mediaRef.id);
+        result.referenceChecks.mediaIds.valid.push({ actionId: action.id, mediaId });
+      }
     });
 
     (backup.data.choreographies || []).forEach((choreo) => {
@@ -630,14 +958,33 @@ const ImportExport = (function () {
         status = ImportStatus.ADD;
       }
 
-      result.stats[status]++;
-      result.choreographies.push({
+      const existingData = idExists ? appState.choreographies.find((c) => c.id === choreo.id) : (nameConflict || null);
+      const previewItem = {
         status,
         data: choreo,
         message,
-        existingData: idExists ? appState.choreographies.find((c) => c.id === choreo.id) : (nameConflict || null),
-        resolveMode: status === ImportStatus.CONFLICT ? ResolveMode.ADD_COPY : null
-      });
+        existingData,
+        resolveMode: status === ImportStatus.CONFLICT ? ResolveMode.ADD_COPY : null,
+        section: SectionType.CHOREOGRAPHIES
+      };
+      if (existingData && (status === ImportStatus.CONFLICT || status === ImportStatus.OVERWRITE)) {
+        previewItem.diff = computeDiff(previewItem, SectionType.CHOREOGRAPHIES);
+      }
+      result.stats[status]++;
+      result.choreographies.push(previewItem);
+
+      if (Array.isArray(choreo.items)) {
+        choreo.items.forEach((item, idx) => {
+          if (item && item.actionId) {
+            result.referenceChecks.actionRefs.valid.push({
+              choreoId: choreo.id,
+              itemIndex: idx,
+              actionId: item.actionId,
+              actionName: item.actionSnapshotName
+            });
+          }
+        });
+      }
     });
 
     (backup.data.scores || []).forEach((score) => {
@@ -652,21 +999,37 @@ const ImportExport = (function () {
         return;
       }
 
-      if (existingScoreIds.has(score.id)) {
-        result.stats.overwrite++;
-        result.scores.push({
-          status: ImportStatus.OVERWRITE,
-          data: score,
-          message: "ID已存在"
-        });
+      let status, message;
+      const existingData = existingScoreIds.has(score.id)
+        ? appState.scores.find((s) => s.id === score.id)
+        : null;
+
+      if (existingData) {
+        status = ImportStatus.OVERWRITE;
+        message = "ID已存在";
       } else {
-        result.stats.add++;
-        result.scores.push({
-          status: ImportStatus.ADD,
-          data: score,
-          message: ""
-        });
+        status = ImportStatus.ADD;
+        message = "";
       }
+
+      const previewItem = {
+        status,
+        data: score,
+        message,
+        existingData,
+        section: SectionType.SCORES
+      };
+      if (existingData && (status === ImportStatus.CONFLICT || status === ImportStatus.OVERWRITE)) {
+        previewItem.diff = computeDiff(previewItem, SectionType.SCORES);
+      }
+      result.stats[status]++;
+      result.scores.push(previewItem);
+
+      result.referenceChecks.actionRefs.valid.push({
+        scoreId: score.id,
+        actionId: score.actionId,
+        type: "score"
+      });
     });
 
     const backupMediaIds = collectMediaIdsFromState(backup.data.actions);
@@ -735,12 +1098,39 @@ const ImportExport = (function () {
         status = ImportStatus.ADD;
       }
 
-      result.stats[status]++;
-      result.plans.push({
+      const existingData = existingPlanIds.has(plan.id)
+        ? (window.PracticeCalendar ? window.PracticeCalendar.getPlanById(plan.id) : null)
+        : null;
+
+      const previewItem = {
         status,
         data: plan,
-        message
-      });
+        message,
+        existingData,
+        section: SectionType.PLANS
+      };
+      if (existingData && (status === ImportStatus.CONFLICT || status === ImportStatus.OVERWRITE)) {
+        previewItem.diff = computeDiff(previewItem, SectionType.PLANS);
+      }
+      result.stats[status]++;
+      result.plans.push(previewItem);
+
+      if (plan.refId) {
+        if (plan.type === "choreography") {
+          result.referenceChecks.choreoRefs.valid.push({
+            planId: plan.id,
+            choreoId: plan.refId,
+            refName: plan.refName
+          });
+        } else {
+          result.referenceChecks.actionRefs.valid.push({
+            planId: plan.id,
+            actionId: plan.refId,
+            refName: plan.refName,
+            type: "plan"
+          });
+        }
+      }
     });
 
     const importedChoreoIds = new Set(backup.data.choreographies.filter((c) => c && c.id).map((c) => c.id));
@@ -754,7 +1144,49 @@ const ImportExport = (function () {
       }
     });
 
+    validateReferences(result, existingActionIds, importedActionIds, existingChoreoIds, importedChoreoIds, existingMediaIds);
+
     return result;
+  }
+
+  function validateReferences(result, existingActionIds, importedActionIds, existingChoreoIds, importedChoreoIds, existingMediaIds) {
+    const allActionIds = new Set([...existingActionIds, ...importedActionIds]);
+    const allChoreoIds = new Set([...existingChoreoIds, ...importedChoreoIds]);
+    const allMediaIds = new Set([...existingMediaIds, ...result.media.available.map((m) => m.id)]);
+
+    result.referenceChecks.mediaIds.invalid = [];
+    result.referenceChecks.actionRefs.invalid = [];
+    result.referenceChecks.choreoRefs.invalid = [];
+
+    const validMediaRefs = [];
+    result.referenceChecks.mediaIds.valid.forEach((ref) => {
+      if (!allMediaIds.has(ref.mediaId)) {
+        result.referenceChecks.mediaIds.invalid.push(ref);
+      } else {
+        validMediaRefs.push(ref);
+      }
+    });
+    result.referenceChecks.mediaIds.valid = validMediaRefs;
+
+    const validActionRefs = [];
+    result.referenceChecks.actionRefs.valid.forEach((ref) => {
+      if (!allActionIds.has(ref.actionId)) {
+        result.referenceChecks.actionRefs.invalid.push(ref);
+      } else {
+        validActionRefs.push(ref);
+      }
+    });
+    result.referenceChecks.actionRefs.valid = validActionRefs;
+
+    const validChoreoRefs = [];
+    result.referenceChecks.choreoRefs.valid.forEach((ref) => {
+      if (!allChoreoIds.has(ref.choreoId)) {
+        result.referenceChecks.choreoRefs.invalid.push(ref);
+      } else {
+        validChoreoRefs.push(ref);
+      }
+    });
+    result.referenceChecks.choreoRefs.valid = validChoreoRefs;
   }
 
   function resolveLabel(mode) {
@@ -851,7 +1283,15 @@ const ImportExport = (function () {
     }
 
     const conflictHint = item.existingData
-      ? `<div class="item-existing">当前：${escapeHtml(item.existingData.name || "(无名称)")}</div>`
+      ? `<div class="item-existing">当前：${escapeHtml(item.existingData.name || item.existingData.date || "(无名称)")}</div>`
+      : "";
+
+    const diffSummary = item.diff && item.diff.fields.length > 0
+      ? `<div class="diff-summary">📊 ${item.diff.hasMajorChanges ? "重要" : ""}差异：${item.diff.fields.map((f) => `<span class="diff-tag">${escapeHtml(f.label)}</span>`).join("")}</div>`
+      : "";
+
+    const conflictDetail = (item.status === ImportStatus.CONFLICT || item.status === ImportStatus.OVERWRITE)
+      ? renderConflictDetail(item, section, index)
       : "";
 
     return `
@@ -861,8 +1301,10 @@ const ImportExport = (function () {
           <div class="item-name">${escapeHtml(name)}</div>
           <div class="item-detail">${escapeHtml(detail)}</div>
           ${item.message ? `<div class="item-message">${escapeHtml(item.message)}</div>` : ""}
+          ${diffSummary}
           ${renderResolveSelect(item, section, index)}
           ${conflictHint}
+          ${conflictDetail}
         </div>
       </div>
     `;
@@ -929,6 +1371,53 @@ const ImportExport = (function () {
     listEl.innerHTML = parts.join("");
   }
 
+  function renderSectionStats() {
+    if (!currentPreview) return "";
+    const overwriteEnabled = document.getElementById("importOverwriteDuplicates")?.checked ?? true;
+    const includeMedia = document.getElementById("importIncludeMedia")?.checked ?? true;
+
+    const sectionStats = computeAllSectionStats(currentPreview, overwriteEnabled, includeMedia);
+    const sections = [
+      SectionType.ACTIONS,
+      SectionType.CHOREOGRAPHIES,
+      SectionType.SCORES,
+      SectionType.PLANS,
+      SectionType.MEDIA
+    ];
+
+    const parts = [];
+    parts.push(`<div class="section-stats-header">
+      <span class="section-stats-title">📋 按类别差异预览</span>
+      <span class="section-stats-hint">点击标签快速跳转</span>
+    </div>`);
+    parts.push(`<div class="section-stats-grid">`);
+
+    sections.forEach((section) => {
+      const stats = sectionStats[section];
+      const label = getSectionLabel(section);
+      const isActive = currentSection === section;
+
+      if (stats.total === 0) return;
+
+      parts.push(`
+        <button type="button" class="section-stat-card ${isActive ? "active" : ""}" data-jump-section="${section}">
+          <div class="section-stat-label">${label}</div>
+          <div class="section-stat-counts">
+            ${stats.add > 0 ? `<span class="section-stat-badge add" title="新增">➕ ${stats.add}</span>` : ""}
+            ${stats.overwrite > 0 ? `<span class="section-stat-badge overwrite" title="覆盖">🔄 ${stats.overwrite}</span>` : ""}
+            ${stats.skip > 0 ? `<span class="section-stat-badge skip" title="跳过">⏭ ${stats.skip}</span>` : ""}
+            ${stats.conflict > 0 ? `<span class="section-stat-badge conflict" title="冲突">⚠ ${stats.conflict}</span>` : ""}
+            ${stats.error > 0 ? `<span class="section-stat-badge error" title="错误">❌ ${stats.error}</span>` : ""}
+          </div>
+          <div class="section-stat-total">共 ${stats.total} 项</div>
+        </button>
+      `);
+    });
+
+    parts.push(`</div>`);
+    return parts.join("");
+  }
+
   function computePreviewStats() {
     if (!currentPreview) return null;
     const overwriteEnabled = document.getElementById("importOverwriteDuplicates")?.checked ?? true;
@@ -983,6 +1472,11 @@ const ImportExport = (function () {
     const mediaCount = (parsedBackupData.media?.meta?.length || 0);
     document.getElementById("importMediaCount").textContent = `${mediaCount} 个引用`;
 
+    const sectionStatsContainer = document.getElementById("importSectionStats");
+    if (sectionStatsContainer) {
+      sectionStatsContainer.innerHTML = renderSectionStats();
+    }
+
     updatePreviewStats();
 
     const warningsEl = document.getElementById("importWarnings");
@@ -1006,6 +1500,9 @@ const ImportExport = (function () {
       const hasImportable = stats && (stats.add > 0 || stats.overwrite > 0);
       confirmBtn.disabled = !hasImportable;
     }
+
+    bindSectionStatsEvents();
+    bindConflictExpandEvents();
   }
 
   function showError(title, message) {
@@ -1187,12 +1684,29 @@ const ImportExport = (function () {
     const idRemap = {};
     const failedMediaIds = new Set();
     const importedActionIds = new Set();
+    const skippedActionIds = new Set();
+    const skippedChoreoIds = new Set();
 
     try {
       (currentPreview.media.missing || []).forEach((m) => failedMediaIds.add(m.id));
       if (!includeMediaChecked) {
         (currentPreview.media.available || []).forEach((m) => failedMediaIds.add(m.id));
       }
+
+      currentPreview.actions.forEach((item) => {
+        const effStatus = getEffectiveStatus(item, overwriteEnabled);
+        if (item.status === ImportStatus.ERROR || effStatus === ImportStatus.SKIP ||
+            (item.status === ImportStatus.CONFLICT && item.resolveMode === ResolveMode.SKIP)) {
+          skippedActionIds.add(item.data.id);
+        }
+      });
+      currentPreview.choreographies.forEach((item) => {
+        const effStatus = getEffectiveStatus(item, overwriteEnabled);
+        if (item.status === ImportStatus.ERROR || effStatus === ImportStatus.SKIP ||
+            (item.status === ImportStatus.CONFLICT && item.resolveMode === ResolveMode.SKIP)) {
+          skippedChoreoIds.add(item.data.id);
+        }
+      });
 
       if (includeMediaChecked && currentPreview.media.available.length) {
         for (const mediaMeta of currentPreview.media.available) {
@@ -1348,6 +1862,10 @@ const ImportExport = (function () {
                 return true;
               }
               if (validLocalActionIds.has(choreoItem.actionId)) return true;
+              if (skippedActionIds.has(choreoItem.actionId)) {
+                removedCount++;
+                return false;
+              }
               removedCount++;
               return false;
             });
@@ -1408,10 +1926,11 @@ const ImportExport = (function () {
           }
 
           if (scoreData.actionId && !mappedActionId) {
+            const skipped = skippedActionIds.has(scoreData.actionId);
             importResult.skipped.push({
               type: "评分",
               name: `动作ID ${scoreData.actionId.slice(0, 8)}...`,
-              reason: "引用的动作导入失败/跳过，评分无法关联"
+              reason: `引用的动作${skipped ? "被跳过" : "导入失败"}，评分无法关联`
             });
             continue;
           }
@@ -1459,9 +1978,12 @@ const ImportExport = (function () {
             }
 
             const validIds = planData.type === "choreography" ? validLocalChoreoIds : validLocalActionIds;
+            const skippedIds = planData.type === "choreography" ? skippedChoreoIds : skippedActionIds;
+
             if (planData.refId && !validIds.has(planData.refId) && !idRemap[`${planData.type}:${planData.refId}`]) {
+              const skipped = skippedIds.has(planData.refId);
               importResult.warnings = importResult.warnings || [];
-              importResult.warnings.push(`练习计划(${planData.date})引用的${planData.type === "choreography" ? "编排" : "动作"}导入失败，计划将保留但显示为失效状态`);
+              importResult.warnings.push(`练习计划(${planData.date})引用的${planData.type === "choreography" ? "编排" : "动作"}${skipped ? "被跳过" : "导入失败"}，计划将保留但显示为失效状态`);
             }
 
             if (item.status === ImportStatus.OVERWRITE) {
@@ -1671,6 +2193,40 @@ const ImportExport = (function () {
             item.resolveMode = mode;
             renderPreviewContent();
           }
+        }
+      });
+    });
+  }
+
+  function bindSectionStatsEvents() {
+    document.querySelectorAll("[data-jump-section]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        const section = e.currentTarget.dataset.jumpSection;
+        if (section) {
+          currentSection = section;
+          renderPreviewContent();
+        }
+      });
+    });
+  }
+
+  function bindConflictExpandEvents() {
+    document.querySelectorAll("[data-conflict-expand]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        const conflictId = e.currentTarget.dataset.conflictExpand;
+        if (conflictId) {
+          if (expandedConflictIds.has(conflictId)) {
+            expandedConflictIds.delete(conflictId);
+          } else {
+            expandedConflictIds.add(conflictId);
+          }
+          renderPreviewContent();
+          setTimeout(() => {
+            const detailEl = document.querySelector(`[data-conflict-detail="${conflictId}"]`);
+            if (detailEl && expandedConflictIds.has(conflictId)) {
+              detailEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            }
+          }, 50);
         }
       });
     });
