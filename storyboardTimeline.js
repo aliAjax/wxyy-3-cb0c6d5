@@ -208,9 +208,9 @@ const StoryboardTimeline = (function () {
 
   function normalizeAnnotationLinks() {
     getAnnotations().forEach((ann) => {
-      if (ann.frameId && getFrameById(ann.frameId)) return;
-      const nearest = getNearestFrameByTime(ann.timestamp);
-      if (nearest) ann.frameId = nearest.id;
+      if (!ann.frameId) return;
+      if (getFrameById(ann.frameId)) return;
+      delete ann.frameId;
     });
   }
 
@@ -218,10 +218,7 @@ const StoryboardTimeline = (function () {
     if (!frameId || newTime == null) return 0;
     let updatedCount = 0;
     getAnnotations().forEach((ann) => {
-      const isLinked = ann.frameId === frameId;
-      const isLegacyMatch = !ann.frameId && oldTime != null && ann.timestamp != null && Math.abs(ann.timestamp - oldTime) < 1.5;
-      if (isLinked || isLegacyMatch) {
-        ann.frameId = frameId;
+      if (ann.frameId === frameId) {
         ann.timestamp = newTime;
         updatedCount++;
       }
