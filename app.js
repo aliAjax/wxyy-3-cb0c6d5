@@ -640,6 +640,7 @@ function switchSidebarTab(tab) {
   sidebarTabs.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === tab));
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === `panel-${tab}`));
 }
+window.__switchSidebarTab = switchSidebarTab;
 
 function switchMainTab(mtab) {
   mainTabs.querySelectorAll(".m-tab").forEach((t) => t.classList.toggle("active", t.dataset.mtab === mtab));
@@ -649,6 +650,9 @@ function switchMainTab(mtab) {
   }
   if (mtab === "calendar" && window.PracticeCalendar) {
     window.PracticeCalendar.renderAll();
+  }
+  if (mtab === "dashboard" && window.PracticeLoopDashboard) {
+    window.PracticeLoopDashboard.renderAll();
   }
 }
 
@@ -1168,6 +1172,12 @@ async function renderAll() {
     const activeTab = document.querySelector('.m-tab.active');
     if (activeTab && activeTab.dataset.mtab === 'calendar') {
       window.PracticeCalendar.renderAll();
+    }
+  }
+  if (window.PracticeLoopDashboard) {
+    const activeTab = document.querySelector('.m-tab.active');
+    if (activeTab && activeTab.dataset.mtab === 'dashboard') {
+      window.PracticeLoopDashboard.renderAll();
     }
   }
 }
@@ -2682,6 +2692,10 @@ renderAll = async function () {
 
   if (window.KnowledgeSearch) {
     window.KnowledgeSearch.init();
+  }
+
+  if (window.PracticeLoopDashboard) {
+    window.PracticeLoopDashboard.init();
   }
 
   await renderAll();

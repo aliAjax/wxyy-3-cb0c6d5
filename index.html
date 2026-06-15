@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="./storyboardTimeline.css" />
   <link rel="stylesheet" href="./practiceCalendar.css" />
   <link rel="stylesheet" href="./knowledgeSearch.css" />
+  <link rel="stylesheet" href="./dashboard.css" />
 </head>
 <body>
   <main class="app">
@@ -75,6 +76,7 @@
       <section class="main">
         <div class="main-tabs" id="mainTabs">
           <button class="m-tab active" type="button" data-mtab="detail">动作详情</button>
+          <button class="m-tab" type="button" data-mtab="dashboard">闭环仪表盘</button>
           <button class="m-tab" type="button" data-mtab="practice">练习面板</button>
           <button class="m-tab" type="button" data-mtab="calendar">练习日历</button>
           <button class="m-tab" type="button" data-mtab="review">复盘评分</button>
@@ -133,6 +135,10 @@
             </div>
             <div id="actionHistoryList" class="history-list"></div>
           </div>
+        </div>
+
+        <div class="m-tab-panel" id="mtab-dashboard">
+          <div id="dashboardPanel" class="dashboard-panel"></div>
         </div>
 
         <div class="m-tab-panel" id="mtab-practice">
@@ -778,6 +784,7 @@
   <script src="./importExport.js"></script>
   <script src="./practiceCalendar.js"></script>
   <script src="./knowledgeSearch.js"></script>
+  <script src="./dashboard.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

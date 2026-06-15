@@ -56,6 +56,17 @@ const PracticeCalendar = (function () {
         }, 300);
       }
     }
+    if (window.PracticeLoopDashboard && typeof window.PracticeLoopDashboard.renderAll === "function") {
+      const activeTab = document.querySelector('.m-tab.active');
+      if (activeTab && activeTab.dataset.mtab === 'dashboard') {
+        if (!save._dashboardThrottle) {
+          save._dashboardThrottle = setTimeout(() => {
+            save._dashboardThrottle = null;
+            window.PracticeLoopDashboard.renderAll();
+          }, 200);
+        }
+      }
+    }
   }
 
   function getAllPlans() {
