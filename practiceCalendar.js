@@ -141,6 +141,10 @@ const PracticeCalendar = (function () {
     return false;
   }
 
+  function getPlanById(planId) {
+    return plans.find((p) => p.id === planId) || null;
+  }
+
   function toggleComplete(planId) {
     const plan = plans.find((p) => p.id === planId);
     if (!plan) return null;
@@ -826,6 +830,7 @@ const PracticeCalendar = (function () {
     getPlansByDate,
     getPlansByRange,
     getPlansByRef,
+    getPlanById,
     createPlan,
     updatePlan,
     deletePlan,

@@ -1852,6 +1852,8 @@ const ImportExport = (function () {
             existingChoreoNames.set(newName.toLowerCase(), choreoData);
           }
 
+          idRemap[`choreography:${item.data.id}`] = choreoData.id;
+
           if (Array.isArray(choreoData.items)) {
             const validLocalActionIds = new Set((appState.actions || []).map((a) => a.id));
             let removedCount = 0;
@@ -1884,6 +1886,7 @@ const ImportExport = (function () {
             if (idx >= 0) {
               if (item.status === ImportStatus.CONFLICT) {
                 choreoData.id = targetId;
+                idRemap[`choreography:${item.data.id}`] = targetId;
               }
               appState.choreographies[idx] = choreoData;
               importResult.success.push({ type: "编排", name: choreoData.name, status: "覆盖" });
@@ -1971,7 +1974,19 @@ const ImportExport = (function () {
               continue;
             }
 
+            if (item.status === ImportStatus.CONFLICT && item.resolveMode === ResolveMode.SKIP) {
+              importResult.skipped.push({ type: "练习计划", name: item.data?.date, reason: "ID冲突，选择跳过" });
+              continue;
+            }
+
             const planData = JSON.parse(JSON.stringify(item.data));
+            const isConflictedCopy = item.status === ImportStatus.CONFLICT && item.resolveMode === ResolveMode.ADD_COPY;
+
+            if (isConflictedCopy) {
+              planData.id = crypto.randomUUID();
+            }
+
+            idRemap[`plan:${item.data.id}`] = planData.id;
 
             if (planData.refId && idRemap[`${planData.type}:${planData.refId}`]) {
               planData.refId = idRemap[`${planData.type}:${planData.refId}`];
@@ -1986,12 +2001,25 @@ const ImportExport = (function () {
               importResult.warnings.push(`练习计划(${planData.date})引用的${planData.type === "choreography" ? "编排" : "动作"}${skipped ? "被跳过" : "导入失败"}，计划将保留但显示为失效状态`);
             }
 
-            if (item.status === ImportStatus.OVERWRITE) {
-              window.PracticeCalendar.updatePlan(planData.id, planData);
-              importResult.success.push({ type: "练习计划", name: `${planData.date} · ${planData.refName}`, status: "覆盖" });
+            const isOverwrite = item.status === ImportStatus.OVERWRITE ||
+              (item.status === ImportStatus.CONFLICT && item.resolveMode === ResolveMode.OVERWRITE);
+
+            if (isOverwrite) {
+              const targetId = item.status === ImportStatus.CONFLICT ? item.existingData.id : planData.id;
+              if (item.status === ImportStatus.CONFLICT) {
+                planData.id = targetId;
+                idRemap[`plan:${item.data.id}`] = targetId;
+              }
+              const updated = window.PracticeCalendar.updatePlan(targetId, planData);
+              if (updated) {
+                importResult.success.push({ type: "练习计划", name: `${planData.date} · ${planData.refName}`, status: "覆盖" });
+              } else {
+                window.PracticeCalendar.createPlan(planData);
+                importResult.success.push({ type: "练习计划", name: `${planData.date} · ${planData.refName}`, status: "新增(原ID不存在)" });
+              }
             } else {
               window.PracticeCalendar.createPlan(planData);
-              importResult.success.push({ type: "练习计划", name: `${planData.date} · ${planData.refName}`, status: "新增" });
+              importResult.success.push({ type: "练习计划", name: `${planData.date} · ${planData.refName}`, status: isConflictedCopy ? "新增(副本)" : "新增" });
             }
           } catch (planErr) {
             importResult.failed.push({ type: "练习计划", name: item.data?.date || "未知", error: planErr.message || planErr });
