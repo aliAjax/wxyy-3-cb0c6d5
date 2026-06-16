@@ -23,3 +23,11 @@ node_modules/
 dist/
 build/
 coverage/
+
+# Playwright
+playwright-report/
+test-results/
+
+# E2E test artifacts
+*.snap
+trace.zip
