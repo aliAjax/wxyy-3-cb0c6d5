@@ -569,7 +569,7 @@ const PracticeLoopDashboard = (function () {
   function jumpToSection(target) {
     const tabMap = {
       actions: "detail",
-      sessions: "practice",
+      sessions: "detail",
       calendar: "calendar",
       review: "review",
       choreography: "choreography"
@@ -581,6 +581,13 @@ const PracticeLoopDashboard = (function () {
       review: "actions",
       choreography: "choreography"
     };
+    const toastMsg = {
+      actions: null,
+      sessions: "已打开课次记录列表，点击课次卡片的「查看」进入练习",
+      calendar: null,
+      review: null,
+      choreography: null
+    };
     if (typeof window.__switchMainTab === "function") {
       window.__switchMainTab(tabMap[target] || "detail");
     }
@@ -589,6 +596,10 @@ const PracticeLoopDashboard = (function () {
       if (typeof window.__switchSidebarTab === "function") {
         window.__switchSidebarTab(sidebarTab);
       }
+    }
+    const msg = toastMsg[target];
+    if (msg && typeof window.showToast === "function") {
+      window.showToast(msg, "info");
     }
   }
 
@@ -649,6 +660,9 @@ const PracticeLoopDashboard = (function () {
     if (typeof window.__switchMainTab === "function") {
       window.__switchMainTab("calendar");
     }
+    if (typeof window.__switchSidebarTab === "function") {
+      window.__switchSidebarTab("actions");
+    }
     if (window.PracticeCalendar && planDate) {
       try {
         window.PracticeCalendar.navigateToDate(planDate);
@@ -656,19 +670,10 @@ const PracticeLoopDashboard = (function () {
         console.warn("导航到日历日期失败:", e);
       }
     }
-    if (planType && planRefId) {
-      const appState = window.__appState;
-      if (appState) {
-        if (planType === "action") {
-          const action = (appState.actions || []).find((a) => a.id === planRefId);
-          if (action) {
-            appState.activeId = planRefId;
-            if (typeof window.__saveAppState === "function") window.__saveAppState();
-          }
-        } else if (planType === "choreography") {
-          jumpToChoreography(planRefId);
-        }
-      }
+    if (typeof window.showToast === "function" && planDate) {
+      const d = new Date(planDate);
+      const dateStr = `${d.getMonth() + 1}月${d.getDate()}日`;
+      window.showToast(`已定位到 ${dateStr} 的日历计划`, "info");
     }
   }
 
