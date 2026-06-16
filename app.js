@@ -1353,12 +1353,38 @@ function renderPracticePanel() {
   const action = state.actions.find((a) => a.id === session.actionId);
   const actionName = action ? action.name : session.actionSnapshotName || "未知动作";
   const frames = session.selectedFrames || [];
+  const isSegmented = session.isSegmented && session.segmentId;
 
   if (session.status === "in_progress") {
     startTimer();
   }
 
+  let segNavHtml = "";
+  if (isSegmented) {
+    const segIdx = (session.segmentIndex ?? 0) + 1;
+    const totalSeg = session.totalSegments ?? segIdx;
+    const segName = session.segmentName || `第 ${segIdx} 段`;
+    const hasPrev = segIdx > 1;
+    const hasNext = segIdx < totalSeg;
+    const focusDims = session.focusDimensions || [];
+
+    segNavHtml = `
+      <div class="seg-nav">
+        <div class="seg-nav-info">
+          <div class="seg-nav-title">📋 ${escapeHtml(segName)}</div>
+          <div class="seg-nav-progress">分段进度: ${segIdx} / ${totalSeg}</div>
+          ${focusDims.length ? `<div class="seg-focus-dims">${focusDims.map((d) => `<span class="seg-focus-tag">⭐ ${escapeHtml(d.label)}</span>`).join("")}</div>` : ""}
+        </div>
+        <div class="seg-nav-buttons">
+          <button type="button" class="seg-nav-btn" id="segPrevBtn" ${!hasPrev ? "disabled" : ""}>← 上一段</button>
+          <button type="button" class="seg-nav-btn" id="segNextBtn" ${!hasNext ? "disabled" : ""}>下一段 →</button>
+        </div>
+      </div>
+    `;
+  }
+
   practicePanel.innerHTML = `
+    ${segNavHtml}
     <div class="practice-head">
       <div class="ph-info">
         <h3>${actionName}</h3>
@@ -1411,6 +1437,7 @@ function renderPracticePanel() {
         <textarea id="reviewNoteInput" rows="4" placeholder="记录本次练习的感受、需要改进的地方...">${session.reviewNote || ""}</textarea>
         <div class="review-actions">
           <button type="button" id="saveReviewBtn" class="btn-accent">保存复盘</button>
+          ${isSegmented ? `<button type="button" id="continueNextSegBtn" class="btn-secondary">继续下一段 →</button>` : ""}
         </div>
       </div>
     ` : ""}
@@ -1503,6 +1530,52 @@ function bindPracticePanelEvents() {
       renderAll();
       showToast("复盘已保存", "success");
     });
+  }
+
+  const segPrevBtn = document.querySelector("#segPrevBtn");
+  if (segPrevBtn) {
+    segPrevBtn.addEventListener("click", () => {
+      navigateSegment("prev");
+    });
+  }
+
+  const segNextBtn = document.querySelector("#segNextBtn");
+  if (segNextBtn) {
+    segNextBtn.addEventListener("click", () => {
+      navigateSegment("next");
+    });
+  }
+
+  const continueNextSegBtn = document.querySelector("#continueNextSegBtn");
+  if (continueNextSegBtn) {
+    continueNextSegBtn.addEventListener("click", () => {
+      navigateSegment("next");
+    });
+  }
+}
+
+function navigateSegment(direction) {
+  const sess = activeSession();
+  if (!sess || !sess.isSegmented || !sess.segmentId) return;
+
+  let targetSegment = null;
+  if (direction === "next") {
+    targetSegment = window.SegmentedPractice?.getNextSegment?.(sess.segmentId);
+  } else if (direction === "prev") {
+    targetSegment = window.SegmentedPractice?.getPrevSegment?.(sess.segmentId);
+  }
+
+  if (!targetSegment) {
+    showToast("没有更多分段了", "info");
+    return;
+  }
+
+  const newSession = window.SegmentedPractice?.startSegmentedSession?.(targetSegment.id);
+  if (newSession) {
+    stopMetronome();
+    metronomePlaying = false;
+    renderAll();
+    showToast(`跳转到${direction === "next" ? "下" : "上"}一段: ${targetSegment.segmentName}`, "success");
   }
 }
 
@@ -3131,6 +3204,10 @@ renderAll = async function () {
   if (window.ActionVersioning) {
     window.ActionVersioning.init();
     initVersionHistoryEvents();
+  }
+
+  if (window.SegmentedPractice) {
+    window.SegmentedPractice.init();
   }
 
   await renderAll();

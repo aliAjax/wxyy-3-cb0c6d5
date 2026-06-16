@@ -90,7 +90,7 @@ const PracticeCalendar = (function () {
   function isReferenceValid(plan) {
     const appState = window.__appState;
     if (!appState) return true;
-    if (plan.type === "action") {
+    if (plan.type === "action" || plan.type === "segmented") {
       return appState.actions.some((a) => a.id === plan.refId);
     } else if (plan.type === "choreography") {
       return appState.choreographies.some((c) => c.id === plan.refId);
@@ -101,7 +101,7 @@ const PracticeCalendar = (function () {
   function getReferenceName(plan) {
     const appState = window.__appState;
     if (!appState) return plan.refName;
-    if (plan.type === "action") {
+    if (plan.type === "action" || plan.type === "segmented") {
       const action = appState.actions.find((a) => a.id === plan.refId);
       return action ? action.name : plan.refName;
     } else if (plan.type === "choreography") {
@@ -123,7 +123,12 @@ const PracticeCalendar = (function () {
       completedAt: planData.completedAt || null,
       note: planData.note || "",
       createdAt: planData.createdAt || new Date().toISOString(),
-      updatedAt: planData.updatedAt || new Date().toISOString()
+      updatedAt: planData.updatedAt || new Date().toISOString(),
+      ...(planData.segmentId != null && { segmentId: planData.segmentId }),
+      ...(planData.segmentedPlanId != null && { segmentedPlanId: planData.segmentedPlanId }),
+      ...(planData.segmentIndex != null && { segmentIndex: planData.segmentIndex }),
+      ...(planData.frameIds != null && { frameIds: planData.frameIds }),
+      ...(planData.focusDimensions != null && { focusDimensions: planData.focusDimensions }),
     };
     plans.push(plan);
     save();
@@ -164,6 +169,75 @@ const PracticeCalendar = (function () {
     plan.updatedAt = new Date().toISOString();
     save();
     return plan;
+  }
+
+  function startPracticeFromPlan(plan) {
+    const appState = window.__appState;
+    if (!appState) return;
+
+    if (plan.type === "segmented" && plan.segmentId) {
+      if (window.SegmentedPractice && typeof window.SegmentedPractice.startSegmentedSession === "function") {
+        const session = window.SegmentedPractice.startSegmentedSession(plan.segmentId);
+        if (session) {
+          if (typeof window.__switchMainTab === "function") {
+            window.__switchMainTab("practice");
+          }
+          if (typeof window.__renderAll === "function") {
+            window.__renderAll();
+          }
+          showToast("开始分段练习", "success");
+        }
+        return;
+      }
+    }
+
+    if (plan.type === "action" || plan.type === "segmented") {
+      const action = appState.actions?.find((a) => a.id === plan.refId);
+      if (!action) {
+        showToast("动作不存在", "error");
+        return;
+      }
+
+      const selectedFrames = plan.frameIds && plan.frameIds.length
+        ? action.frames?.filter((f) => plan.frameIds.includes(f.id)) || []
+        : (action.frames || []);
+
+      if (!selectedFrames.length) {
+        showToast("没有可用的关键帧", "error");
+        return;
+      }
+
+      const session = {
+        id: crypto.randomUUID(),
+        actionId: action.id,
+        actionSnapshotName: action.name,
+        selectedFrameIds: selectedFrames.map((f) => f.id),
+        selectedFrames: selectedFrames.map((f) => ({ ...f })),
+        startTime: new Date().toISOString(),
+        duration: 0,
+        tempoBPM: 80,
+        status: "in_progress",
+        reviewNote: "",
+        planId: plan.id,
+      };
+
+      if (!Array.isArray(appState.sessions)) appState.sessions = [];
+      appState.sessions.unshift(session);
+      appState.activeSessionId = session.id;
+
+      if (typeof window.__saveAppState === "function") {
+        window.__saveAppState();
+      }
+      if (typeof window.__switchMainTab === "function") {
+        window.__switchMainTab("practice");
+      }
+      if (typeof window.__renderAll === "function") {
+        window.__renderAll();
+      }
+      showToast("开始练习", "success");
+    } else if (plan.type === "choreography") {
+      showToast("编排练习功能开发中", "info");
+    }
   }
 
   function batchCreatePlans(startDate, endDate, planTemplate, skipWeekends = false) {
@@ -442,8 +516,9 @@ const PracticeCalendar = (function () {
   }
 
   function renderPlanCard(plan) {
-    const typeLabel = plan.type === "action" ? "动作" : "编排";
-    const typeClass = plan.type === "action" ? "type-action" : "type-choreo";
+    const isSegmented = plan.type === "segmented";
+    const typeLabel = plan.type === "action" ? "动作" : plan.type === "choreography" ? "编排" : "分段练习";
+    const typeClass = plan.type === "action" ? "type-action" : plan.type === "choreography" ? "type-choreo" : "type-segmented";
     const refName = getReferenceName(plan);
     const isOverdue = !plan.completed && isPastDate(plan.date) && !isToday(plan.date);
 
@@ -463,8 +538,14 @@ const PracticeCalendar = (function () {
       statusLabel = "今日计划";
     }
 
+    const displayName = isSegmented && plan.note ? plan.note : refName;
+    const segBadge = isSegmented ? '<span class="seg-plan-badge">分段</span>' : "";
+    const startBtn = !plan._invalid && !plan.completed
+      ? `<button type="button" class="btn-small btn-accent" data-plan-start="${plan.id}">开始练习</button>`
+      : "";
+
     return `
-      <div class="plan-card ${statusClass}" data-plan-id="${plan.id}">
+      <div class="plan-card ${statusClass} ${typeClass}" data-plan-id="${plan.id}">
         <div class="plan-card-head">
           <label class="plan-checkbox">
             <input type="checkbox" class="plan-complete-check" ${plan.completed ? "checked" : ""} ${plan._invalid ? "disabled" : ""}>
@@ -472,17 +553,21 @@ const PracticeCalendar = (function () {
           </label>
           <div class="plan-info">
             <span class="plan-type ${typeClass}">${typeLabel}</span>
-            <strong class="plan-name ${plan._invalid ? "strikethrough" : ""}">${escapeHtml(refName)}</strong>
+            <strong class="plan-name ${plan._invalid ? "strikethrough" : ""}">${escapeHtml(displayName)}${segBadge}</strong>
           </div>
           <span class="plan-status">${statusLabel}</span>
         </div>
         ${plan.goal ? `<div class="plan-goal">🎯 ${escapeHtml(plan.goal)}</div>` : ""}
-        ${plan.note ? `<div class="plan-note">📝 ${escapeHtml(plan.note)}</div>` : ""}
+        ${isSegmented && plan.focusDimensions && plan.focusDimensions.length
+          ? `<div class="plan-focus-dims">⭐ 重点: ${plan.focusDimensions.map((d) => d.label).join("、")}</div>`
+          : ""}
+        ${plan.note && !isSegmented ? `<div class="plan-note">📝 ${escapeHtml(plan.note)}</div>` : ""}
         <div class="plan-actions">
+          ${startBtn}
           <button type="button" class="btn-small btn-secondary" data-plan-edit="${plan.id}">编辑</button>
           <button type="button" class="btn-small btn-danger" data-plan-delete="${plan.id}">删除</button>
         </div>
-        ${plan._invalid ? `<div class="plan-invalid-hint">⚠ 关联的${typeLabel}已不存在，计划已失效</div>` : ""}
+        ${plan._invalid ? `<div class="plan-invalid-hint">⚠ 关联的${isSegmented ? "动作" : typeLabel}已不存在，计划已失效</div>` : ""}
       </div>
     `;
   }
@@ -545,6 +630,15 @@ const PracticeCalendar = (function () {
           renderCalendar();
           showToast("计划已删除", "success");
         }
+      });
+    });
+
+    document.querySelectorAll("[data-plan-start]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const planId = btn.dataset.planStart;
+        const plan = plans.find((p) => p.id === planId);
+        if (plan) startPracticeFromPlan(plan);
       });
     });
 

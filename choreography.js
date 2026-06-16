@@ -798,6 +798,7 @@ const Choreography = (function () {
           <span>${sortedItems.length} 个动作</span>
           <span>${totalBeats} 拍</span>
           ${modeToggleHtml}
+          <button type="button" class="btn-small btn-accent" data-gen-segmented="${choreo.id}">📋 生成分段练习</button>
           <button type="button" class="btn-small btn-secondary" data-edit-choreo="${choreo.id}">编辑编排</button>
         </div>
       </div>
@@ -1147,6 +1148,7 @@ const Choreography = (function () {
         const editId = e.target.closest("[data-edit-choreo]")?.dataset.editChoreo;
         const syncId = e.target.closest("[data-sync-name]")?.dataset.syncName;
         const viewMode = e.target.closest("[data-view-mode]")?.dataset.viewMode;
+        const genSegmentedId = e.target.closest("[data-gen-segmented]")?.dataset.genSegmented;
 
         if (viewMode) {
           setTimelineViewMode(viewMode);
@@ -1157,6 +1159,13 @@ const Choreography = (function () {
           const choreo = activeChoreography();
           if (choreo) {
             syncItemSnapshotName(choreo.id, syncId);
+          }
+          return;
+        }
+
+        if (genSegmentedId) {
+          if (window.SegmentedPractice && typeof window.SegmentedPractice.openGeneratorModal === "function") {
+            window.SegmentedPractice.openGeneratorModal(genSegmentedId, []);
           }
           return;
         }

@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="./practiceCalendar.css" />
   <link rel="stylesheet" href="./knowledgeSearch.css" />
   <link rel="stylesheet" href="./dashboard.css" />
+  <link rel="stylesheet" href="./segmentedPractice.css" />
 </head>
 <body>
   <main class="app">
@@ -826,6 +827,18 @@
       </div>
     </div>
 
+    <div class="modal-mask seg-modal" id="segmentedPracticeModal" hidden>
+      <div class="modal segmented-practice-modal">
+        <header class="modal-head">
+          <h3>分段练习方案生成</h3>
+          <button class="modal-close" type="button" data-close-seg-modal>×</button>
+        </header>
+        <div class="modal-body" id="segmentedGeneratorContent">
+          <p class="muted">加载中...</p>
+        </div>
+      </div>
+    </div>
+
     <div class="knowledge-search-overlay" id="knowledgeSearchOverlay">
       <div class="knowledge-search-panel" id="knowledgeSearchPanel">
         <div class="ks-panel-inner">
@@ -851,6 +864,7 @@
   <script src="./knowledgeSearch.js"></script>
   <script src="./dashboard.js"></script>
   <script src="./actionVersioning.js"></script>
+  <script src="./segmentedPractice.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>
