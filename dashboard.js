@@ -541,17 +541,17 @@ const PracticeLoopDashboard = (function () {
         return;
       }
 
-      const actionEl = e.target.closest("[data-db-action]");
-      if (actionEl) {
-        const actionId = actionEl.dataset.dbAction;
-        jumpToAction(actionId);
-        return;
-      }
-
       const sessionEl = e.target.closest("[data-db-session]");
       if (sessionEl) {
         const sessionId = sessionEl.dataset.dbSession;
         jumpToSession(sessionId);
+        return;
+      }
+
+      const actionEl = e.target.closest("[data-db-action]");
+      if (actionEl) {
+        const actionId = actionEl.dataset.dbAction;
+        jumpToAction(actionId);
         return;
       }
 
