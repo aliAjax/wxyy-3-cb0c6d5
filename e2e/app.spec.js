@@ -103,8 +103,8 @@ test.describe("昆曲水袖动作拆解板 - E2E 集成测试", () => {
     expect(action.frames[0].stage).toBe("起势");
   });
 
-  test("评分功能 - 可以切换到复盘评分面板", async ({ page }) => {
-    const actionName = "评分测试动作";
+  test("评分录入 - 完整评分录入流程", async ({ page }) => {
+    const actionName = "评分录入测试动作";
     await page.locator("#actionForm input[name='name']").fill(actionName);
     await page.locator("#actionForm button[type='submit']").click();
     await expect(page.locator("#actionList")).toContainText(actionName);
@@ -112,12 +112,169 @@ test.describe("昆曲水袖动作拆解板 - E2E 集成测试", () => {
     await page.locator("[data-mtab='review']").click();
     await expect(page.locator("#mtab-review")).toHaveClass(/active/);
     await expect(page.locator("#reviewPanel")).toBeVisible();
+    await expect(page.locator(".score-input-grid")).toBeVisible();
+
+    const dimensions = {
+      centerStability: 5,
+      sleeveContinuity: 4,
+      wristDirection: 5,
+      rhythmAlignment: 3,
+      poseCompletion: 4
+    };
+
+    for (const [dim, value] of Object.entries(dimensions)) {
+      const slider = page.locator(`.score-input-slider[data-dim='${dim}']`);
+      await slider.fill(String(value));
+      await slider.dispatchEvent("input");
+    }
+
+    const noteText = "今天练习感觉不错，袖路连贯性有待加强";
+    await page.locator("#scoreNoteInput").fill(noteText);
+
+    const initialTotal = await page.locator("#scoreTotalDisplay").textContent();
+    expect(initialTotal).toBeTruthy();
+
+    await page.locator("#submitScoreBtn").click();
+
+    await expect(page.locator(".score-history-section h3")).toContainText("1");
+    await expect(page.locator(".score-history-list")).toContainText(noteText);
+
+    const appState = await page.evaluate((key) => {
+      return JSON.parse(localStorage.getItem(key) || "{}");
+    }, STORAGE_KEY);
+
+    expect(appState.scores.length).toBe(1);
+    const score = appState.scores[0];
+    expect(score.actionId).toBeTruthy();
+    expect(score.total).toBe(5 + 4 + 5 + 3 + 4);
+    expect(score.note).toBe(noteText);
+    expect(score.dimensions.centerStability).toBe(5);
+    expect(score.dimensions.sleeveContinuity).toBe(4);
   });
 
-  test("日历计划 - 可以切换到练习日历面板", async ({ page }) => {
+  test("日历计划创建 - 完整创建练习计划流程", async ({ page }) => {
+    const actionName = "日历测试动作";
+    await page.locator("#actionForm input[name='name']").fill(actionName);
+    await page.locator("#actionForm button[type='submit']").click();
+    await expect(page.locator("#actionList")).toContainText(actionName);
+
     await page.locator("[data-mtab='calendar']").click();
     await expect(page.locator("#mtab-calendar")).toHaveClass(/active/);
     await expect(page.locator("#practiceCalendar")).toBeVisible();
+
+    await expect(page.locator("#calAddPlanBtn")).toBeVisible();
+    await page.locator("#calAddPlanBtn").click();
+
+    await expect(page.locator("#planModal")).toBeVisible();
+    await expect(page.locator("#planModalTitle")).toContainText("添加练习计划");
+
+    const today = new Date().toISOString().split("T")[0];
+    await page.locator("#planDate").fill(today);
+
+    await page.locator("#planType").selectOption("action");
+    await page.selectOption("#planRefId", { label: actionName });
+
+    const goalText = "每天练习10次，重点关注手腕发力";
+    await page.locator("#planGoal").fill(goalText);
+
+    const noteText = "记得配合呼吸节奏";
+    await page.locator("#planNote").fill(noteText);
+
+    await page.locator("#planForm button[type='submit']").click();
+
+    await expect(page.locator("#planModal")).toBeHidden();
+    await expect(page.locator(".plan-card, .cal-selected .plan-card, .selected-date-plans")).toBeVisible({ timeout: 5000 });
+
+    const calendarData = await page.evaluate((key) => {
+      return JSON.parse(localStorage.getItem(key) || "[]");
+    }, CALENDAR_KEY);
+
+    expect(Array.isArray(calendarData)).toBe(true);
+    expect(calendarData.length).toBeGreaterThanOrEqual(1);
+
+    const plan = calendarData.find(p => p.goal === goalText);
+    expect(plan).toBeTruthy();
+    expect(plan.type).toBe("action");
+    expect(plan.date).toBe(today);
+    expect(plan.note).toBe(noteText);
+    expect(plan.completed).toBe(false);
+  });
+
+  test("导入备份预览解析 - 完整导入预览流程", async ({ page }) => {
+    const actionName = "导入导出测试动作";
+    const actionTags = "测试,导入导出";
+
+    await page.locator("#actionForm input[name='name']").fill(actionName);
+    await page.locator("#actionForm input[name='tags']").fill(actionTags);
+    await page.locator("#actionForm button[type='submit']").click();
+    await expect(page.locator("#actionList")).toContainText(actionName);
+
+    const downloadPromise = page.waitForEvent("download");
+    await page.locator("#exportBackupBtn").click();
+    const download = await downloadPromise;
+
+    const backupBuffer = await download.createReadStream().then(stream => {
+      return new Promise((resolve, reject) => {
+        const chunks = [];
+        stream.on("data", chunk => chunks.push(chunk));
+        stream.on("end", () => resolve(Buffer.concat(chunks)));
+        stream.on("error", reject);
+      });
+    });
+
+    const backupData = JSON.parse(backupBuffer.toString("utf-8"));
+    expect(backupData.version).toBeTruthy();
+    expect(backupData.app).toBe("wxyy-3-kunqu-sleeve-board");
+    expect(backupData.data.actions.length).toBe(1);
+    expect(backupData.data.actions[0].name).toBe(actionName);
+
+    await clearStorageAndReload(page);
+    await expect(page.locator("#actionList")).toContainText("还没有动作条目");
+
+    const fileChooserPromise = page.waitForEvent("filechooser");
+    await page.locator("#importBackupBtn").click();
+    const fileChooser = await fileChooserPromise;
+    await fileChooser.setFiles({
+      name: "backup-test.json",
+      mimeType: "application/json",
+      buffer: backupBuffer
+    });
+
+    await expect(page.locator("#importPreviewContent")).toBeVisible({ timeout: 8000 });
+    await expect(page.locator("#importBackupVersion")).toBeVisible();
+
+    await expect(page.locator("#importActionCount")).toHaveText(/1/);
+    await expect(page.locator("#statAddCount")).toHaveText(/1/);
+
+    await expect(page.locator("[data-jump-section='actions']")).toBeVisible();
+    await expect(page.locator("#importPreviewList")).toContainText(actionName);
+
+    const actionItems = page.locator(".import-item-card");
+    await expect(actionItems.first()).toContainText(actionName);
+    await expect(actionItems.first()).toContainText("新增");
+
+    await expect(page.locator(".item-status-badge")).toHaveText(/新增/);
+
+    const previewStats = await page.evaluate(() => {
+      const stats = {};
+      document.querySelectorAll("[data-jump-section]").forEach(el => {
+        const section = el.dataset.jumpSection;
+        stats[section] = true;
+      });
+      return stats;
+    });
+
+    expect(previewStats.actions).toBe(true);
+
+    await expect(page.locator("#confirmImportBtn")).not.toBeDisabled();
+
+    await expect(page.locator("[data-close-import-preview]").first()).toBeVisible();
+
+    await page.evaluate(() => {
+      const modal = document.getElementById("importPreviewModal");
+      if (modal) modal.hidden = true;
+    });
+    await expect(page.locator("#importPreviewModal")).toBeHidden();
   });
 
   test("导出备份 - 可以触发导出功能", async ({ page }) => {
