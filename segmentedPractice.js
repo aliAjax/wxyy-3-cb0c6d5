@@ -6,6 +6,7 @@ const SegmentedPractice = (function () {
     generatedPlans: [],
     activePlanId: null,
     isGenerating: false,
+    expandedSegmentId: null,
   };
 
   let modalEventsBound = false;
@@ -81,12 +82,25 @@ const SegmentedPractice = (function () {
     });
   }
 
+  function getAllDimensions() {
+    if (typeof ReviewScoring !== "undefined" && ReviewScoring.DIMENSIONS) {
+      return ReviewScoring.DIMENSIONS.map((d) => ({ key: d.key, label: d.label }));
+    }
+    return [
+      { key: "centerStability", label: "重心稳定" },
+      { key: "sleeveContinuity", label: "袖路连贯" },
+      { key: "wristDirection", label: "腕部方向" },
+      { key: "rhythmAlignment", label: "节奏贴合" },
+      { key: "poseCompletion", label: "亮相完成度" },
+    ];
+  }
+
   function getLowScoreDimensions(actionId) {
     if (typeof ReviewScoring === "undefined") return [];
     const scores = ReviewScoring.getScoresForAction(actionId);
     if (!scores.length) return [];
 
-    const dimensions = ReviewScoring.DIMENSIONS || [];
+    const dimensions = getAllDimensions();
     const dimensionAvgs = dimensions.map((dim) => {
       const avg = ReviewScoring.calcDimensionAverage(scores, dim.key);
       return { key: dim.key, label: dim.label, avg: avg ?? 5 };
@@ -275,17 +289,32 @@ const SegmentedPractice = (function () {
     if (!segment) return null;
 
     Object.assign(segment, updates);
+
+    if (updates.frameIds && segment.actionId) {
+      const allFrames = getActionFrames(segment.actionId);
+      segment.frames = allFrames.filter((f) => updates.frameIds.includes(f.id)).map((f) => ({ ...f }));
+    }
+
     plan.updatedAt = new Date().toISOString();
     save();
     return segment;
   }
 
-  function reorderSegment(planId, segmentId, newIndex) {
+  function reorderSegment(planId, segmentId, direction) {
     const plan = getPlanById(planId);
     if (!plan) return null;
 
     const currentIndex = plan.segments.findIndex((s) => s.id === segmentId);
     if (currentIndex === -1) return null;
+
+    let newIndex = currentIndex;
+    if (direction === "up" && currentIndex > 0) {
+      newIndex = currentIndex - 1;
+    } else if (direction === "down" && currentIndex < plan.segments.length - 1) {
+      newIndex = currentIndex + 1;
+    }
+
+    if (newIndex === currentIndex) return plan;
 
     const [segment] = plan.segments.splice(currentIndex, 1);
     plan.segments.splice(newIndex, 0, segment);
@@ -295,9 +324,28 @@ const SegmentedPractice = (function () {
       s.segmentIndex = idx;
     });
 
+    if (plan.scheduledDates && plan.scheduledDates.length) {
+      const sessionsPerDay = plan.params?.sessionsPerDay || 1;
+      plan.scheduledDates = generateScheduleDates(plan.segments.length, plan.scheduledDates[0], sessionsPerDay);
+    }
+
+    plan.totalSegments = plan.segments.length;
     plan.updatedAt = new Date().toISOString();
     save();
     return plan;
+  }
+
+  function moveSegmentToDate(planId, segmentId, newDateKey) {
+    const plan = getPlanById(planId);
+    if (!plan || !plan.scheduledDates) return false;
+
+    const seg = plan.segments.find((s) => s.id === segmentId);
+    if (!seg) return false;
+
+    plan.scheduledDates[seg.segmentIndex] = newDateKey;
+    plan.updatedAt = new Date().toISOString();
+    save();
+    return true;
   }
 
   function addSegment(planId, afterSegmentId = null) {
@@ -338,6 +386,11 @@ const SegmentedPractice = (function () {
       s.segmentIndex = idx;
     });
 
+    if (plan.scheduledDates && plan.scheduledDates.length) {
+      const sessionsPerDay = plan.params?.sessionsPerDay || 1;
+      plan.scheduledDates = generateScheduleDates(plan.segments.length, plan.scheduledDates[0], sessionsPerDay);
+    }
+
     plan.totalSegments = plan.segments.length;
     plan.updatedAt = new Date().toISOString();
     save();
@@ -356,6 +409,16 @@ const SegmentedPractice = (function () {
         s.order = idx;
         s.segmentIndex = idx;
       });
+
+      if (plan.scheduledDates && plan.scheduledDates.length) {
+        const sessionsPerDay = plan.params?.sessionsPerDay || 1;
+        plan.scheduledDates = generateScheduleDates(plan.segments.length, plan.scheduledDates[0], sessionsPerDay);
+      }
+
+      if (state.expandedSegmentId === segmentId) {
+        state.expandedSegmentId = null;
+      }
+
       plan.totalSegments = plan.segments.length;
       plan.updatedAt = new Date().toISOString();
       save();
@@ -364,42 +427,103 @@ const SegmentedPractice = (function () {
     return false;
   }
 
-  function getExistingPlansForChoreo(choreoId) {
-    if (!window.PracticeCalendar || typeof window.PracticeCalendar.getPlansByRef !== "function") {
-      return [];
-    }
-    return window.PracticeCalendar.getPlansByRef(choreoId, "choreography") || [];
+  function toggleSegmentExpand(segmentId) {
+    state.expandedSegmentId = state.expandedSegmentId === segmentId ? null : segmentId;
+    renderGeneratorModal();
   }
 
-  function checkForDuplicates(planId, startDate, sessionsPerDay = 1) {
+  function detectCrossGenerationConflicts(planId, startDate, sessionsPerDay = 1) {
     const plan = getPlanById(planId);
-    if (!plan || !window.PracticeCalendar) return { duplicates: [], conflicts: [] };
+    if (!plan || !window.PracticeCalendar) {
+      return { exactDuplicates: [], actionDateDuplicates: [], sameDayConflicts: [], allCalendarPlans: [] };
+    }
 
-    const duplicates = [];
-    const conflicts = [];
     const scheduledDates = plan.scheduledDates || generateScheduleDates(plan.segments.length, startDate, sessionsPerDay);
-
     const existingPlans = window.PracticeCalendar.getAllPlans
       ? window.PracticeCalendar.getAllPlans()
       : [];
 
-    plannedSegments: for (let i = 0; i < plan.segments.length; i++) {
-      const seg = plan.segments[i];
-      const dateKey = scheduledDates[i] || scheduledDates[scheduledDates.length - 1];
+    const exactDuplicates = [];
+    const actionDateDuplicates = [];
+    const sameDayConflicts = [];
 
-      for (const existing of existingPlans) {
-        if (existing.date !== dateKey) continue;
+    plan.segments.forEach((seg, idx) => {
+      const dateKey = scheduledDates[idx] || scheduledDates[scheduledDates.length - 1];
+
+      existingPlans.forEach((existing) => {
+        if (existing.date !== dateKey) return;
+
         if (existing.type === SEGMENT_TYPE && existing.segmentId === seg.id) {
-          duplicates.push({ segmentId: seg.id, date: dateKey, existingPlanId: existing.id });
-          continue plannedSegments;
+          exactDuplicates.push({
+            segmentId: seg.id,
+            segmentName: seg.segmentName,
+            date: dateKey,
+            existingPlanId: existing.id,
+            type: "exact",
+          });
         }
-        if (existing.refId === seg.actionId) {
-          conflicts.push({ segmentId: seg.id, date: dateKey, existingPlanId: existing.id, existingType: existing.type });
-        }
-      }
-    }
 
-    return { duplicates, conflicts };
+        if (existing.type === SEGMENT_TYPE && existing.segmentedPlanId !== plan.id && existing.refId === seg.actionId) {
+          const alreadyRecorded = actionDateDuplicates.some(
+            (d) => d.segmentId === seg.id && d.date === dateKey
+          );
+          if (!alreadyRecorded) {
+            actionDateDuplicates.push({
+              segmentId: seg.id,
+              segmentName: seg.segmentName,
+              date: dateKey,
+              existingPlanId: existing.id,
+              existingPlanName: existing.note || existing.refName,
+              type: "action-date",
+            });
+          }
+        }
+
+        if (existing.type !== SEGMENT_TYPE && existing.refId === seg.actionId) {
+          const alreadyRecorded = sameDayConflicts.some(
+            (c) => c.segmentId === seg.id && c.date === dateKey
+          );
+          if (!alreadyRecorded) {
+            sameDayConflicts.push({
+              segmentId: seg.id,
+              segmentName: seg.segmentName,
+              date: dateKey,
+              existingPlanId: existing.id,
+              existingPlanName: existing.refName,
+              existingType: existing.type,
+              type: "conflict",
+            });
+          }
+        }
+      });
+    });
+
+    return { exactDuplicates, actionDateDuplicates, sameDayConflicts, allCalendarPlans: existingPlans };
+  }
+
+  function checkForDuplicates(planId, startDate, sessionsPerDay = 1) {
+    const { exactDuplicates, sameDayConflicts } = detectCrossGenerationConflicts(planId, startDate, sessionsPerDay);
+    return { duplicates: exactDuplicates, conflicts: sameDayConflicts };
+  }
+
+  function getConflictSummary(planId, startDate, sessionsPerDay = 1) {
+    const conflicts = detectCrossGenerationConflicts(planId, startDate, sessionsPerDay);
+    const plan = getPlanById(planId);
+    if (!plan) return null;
+
+    const total = plan.segments.length;
+    const exactDupCount = conflicts.exactDuplicates.length;
+    const actionDateDupCount = conflicts.actionDateDuplicates.length;
+    const conflictCount = conflicts.sameDayConflicts.length;
+
+    return {
+      total,
+      exactDuplicates: exactDupCount,
+      actionDateDuplicates: actionDateDupCount,
+      conflicts: conflictCount,
+      willCreate: total - exactDupCount,
+      ...conflicts,
+    };
   }
 
   function writeToCalendar(planId, options = {}) {
@@ -412,7 +536,8 @@ const SegmentedPractice = (function () {
     const {
       startDate = null,
       sessionsPerDay = 1,
-      skipDuplicates = true,
+      skipExactDuplicates = true,
+      skipActionDateDuplicates = true,
       skipConflicts = false,
     } = options;
 
@@ -421,29 +546,32 @@ const SegmentedPractice = (function () {
 
     const createdPlans = [];
     const skipped = [];
-
-    const existingPlans = window.PracticeCalendar.getAllPlans
-      ? window.PracticeCalendar.getAllPlans()
-      : [];
+    const conflicts = detectCrossGenerationConflicts(planId, targetStartDate, sessionsPerDay);
 
     plan.segments.forEach((seg, idx) => {
       const dateKey = scheduledDates[idx] || scheduledDates[scheduledDates.length - 1];
 
-      const isDuplicate = existingPlans.some((p) =>
-        p.type === SEGMENT_TYPE && p.segmentId === seg.id && p.date === dateKey
+      const isExactDup = conflicts.exactDuplicates.some(
+        (d) => d.segmentId === seg.id && d.date === dateKey
       );
-
-      if (skipDuplicates && isDuplicate) {
-        skipped.push({ segmentId: seg.id, reason: "duplicate" });
+      if (skipExactDuplicates && isExactDup) {
+        skipped.push({ segmentId: seg.id, segmentName: seg.segmentName, date: dateKey, reason: "exact" });
         return;
       }
 
-      const hasConflict = existingPlans.some((p) =>
-        p.date === dateKey && p.refId === seg.actionId && p.type !== SEGMENT_TYPE
+      const isActionDateDup = conflicts.actionDateDuplicates.some(
+        (d) => d.segmentId === seg.id && d.date === dateKey
       );
+      if (skipActionDateDuplicates && isActionDateDup) {
+        skipped.push({ segmentId: seg.id, segmentName: seg.segmentName, date: dateKey, reason: "action-date" });
+        return;
+      }
 
+      const hasConflict = conflicts.sameDayConflicts.some(
+        (c) => c.segmentId === seg.id && c.date === dateKey
+      );
       if (skipConflicts && hasConflict) {
-        skipped.push({ segmentId: seg.id, reason: "conflict" });
+        skipped.push({ segmentId: seg.id, segmentName: seg.segmentName, date: dateKey, reason: "conflict" });
         return;
       }
 
@@ -471,7 +599,15 @@ const SegmentedPractice = (function () {
       showToast(`已成功写入 ${createdPlans.length} 个分段练习计划到日历`, "success");
     }
     if (skipped.length > 0) {
-      showToast(`跳过 ${skipped.length} 个重复/冲突的计划`, "info");
+      const reasons = {};
+      skipped.forEach((s) => {
+        reasons[s.reason] = (reasons[s.reason] || 0) + 1;
+      });
+      const reasonMsgs = [];
+      if (reasons.exact) reasonMsgs.push(`${reasons.exact}个完全重复`);
+      if (reasons["action-date"]) reasonMsgs.push(`${reasons["action-date"]}个同日同动作`);
+      if (reasons.conflict) reasonMsgs.push(`${reasons.conflict}个与其他计划冲突`);
+      showToast(`跳过 ${skipped.length} 个计划：${reasonMsgs.join("，")}`, "info");
     }
 
     return createdPlans;
@@ -486,6 +622,7 @@ const SegmentedPractice = (function () {
 
     state._pendingChoreoId = choreographyId;
     state._pendingItemIds = [...selectedItemIds];
+    state.expandedSegmentId = null;
 
     modal.hidden = false;
     renderGeneratorModal();
@@ -525,11 +662,12 @@ const SegmentedPractice = (function () {
       const sortedItems = [...choreo.items].sort((a, b) => a.order - b.order);
       itemsHtml = sortedItems.map((item) => {
         const checked = pendingItemIds.length === 0 || pendingItemIds.includes(item.id);
+        const frames = getActionFrames(item.actionId);
         return `
           <label class="seg-item-check">
             <input type="checkbox" name="segItemIds" value="${item.id}" ${checked ? "checked" : ""}>
             <span class="seg-item-name">${escapeHtml(item.actionSnapshotName || "未知动作")}</span>
-            <span class="seg-item-beats">${item.beats} 拍</span>
+            <span class="seg-item-beats">${item.beats} 拍 · ${frames.length} 帧</span>
           </label>
         `;
       }).join("");
@@ -599,22 +737,37 @@ const SegmentedPractice = (function () {
   function renderPlanPreview(plan) {
     const sortedSegments = [...plan.segments].sort((a, b) => a.order - b.order);
     const scheduledDates = plan.scheduledDates || [];
+    const summary = getConflictSummary(plan.id, scheduledDates[0] || formatDateKey(new Date()), plan.params?.sessionsPerDay || 1);
 
     const segmentsHtml = sortedSegments.map((seg, idx) => {
       const dateKey = scheduledDates[idx] || "未安排";
       const frameCount = seg.frames?.length || seg.frameIds?.length || 0;
-      const focusLabels = seg.focusDimensions?.map((d) => d.label).join("、") || "无";
+      const isExpanded = state.expandedSegmentId === seg.id;
+      const hasExactDup = summary?.exactDuplicates.some((d) => d.segmentId === seg.id && d.date === dateKey);
+      const hasActionDup = summary?.actionDateDuplicates.some((d) => d.segmentId === seg.id && d.date === dateKey);
+      const hasConflict = summary?.sameDayConflicts.some((c) => c.segmentId === seg.id && c.date === dateKey);
+
+      let statusBadge = "";
+      if (hasExactDup) {
+        statusBadge = '<span class="seg-status-badge status-duplicate">完全重复</span>';
+      } else if (hasActionDup) {
+        statusBadge = '<span class="seg-status-badge status-warning">同日同动作</span>';
+      } else if (hasConflict) {
+        statusBadge = '<span class="seg-status-badge status-info">有冲突</span>';
+      }
 
       return `
-        <div class="seg-preview-card" data-segment-id="${seg.id}">
-          <div class="seg-card-head">
+        <div class="seg-preview-card ${isExpanded ? "expanded" : ""}" data-segment-id="${seg.id}">
+          <div class="seg-card-head" data-seg-toggle="${seg.id}">
             <span class="seg-num">${idx + 1}</span>
             <div class="seg-card-title">
               <strong>${escapeHtml(seg.segmentName)}</strong>
-              <span class="seg-card-meta">${seg.beats} 拍 · ${frameCount} 个关键帧</span>
+              <span class="seg-card-meta">${seg.beats} 拍 · ${frameCount} 个关键帧${statusBadge ? " · " + statusBadge : ""}</span>
             </div>
             <div class="seg-card-actions">
-              <button type="button" class="btn-small btn-secondary" data-seg-edit="${seg.id}">编辑</button>
+              <button type="button" class="btn-small btn-secondary" data-seg-up="${seg.id}" ${idx === 0 ? "disabled" : ""} title="上移">↑</button>
+              <button type="button" class="btn-small btn-secondary" data-seg-down="${seg.id}" ${idx === sortedSegments.length - 1 ? "disabled" : ""} title="下移">↓</button>
+              <button type="button" class="btn-small btn-secondary" data-seg-toggle="${seg.id}">${isExpanded ? "收起" : "编辑"}</button>
               <button type="button" class="btn-small btn-danger" data-seg-remove="${seg.id}">删除</button>
             </div>
           </div>
@@ -627,14 +780,39 @@ const SegmentedPractice = (function () {
               <span class="seg-info-label">🎯 目标:</span>
               <span class="seg-info-value">${escapeHtml(seg.goal || "未设置")}</span>
             </div>
-            <div class="seg-card-info">
-              <span class="seg-info-label">⭐ 重点维度:</span>
-              <span class="seg-info-value">${focusLabels}</span>
-            </div>
           </div>
+          ${isExpanded ? renderSegmentEditor(seg, dateKey) : ""}
         </div>
       `;
     }).join("");
+
+    const conflictSummaryHtml = summary && (summary.exactDuplicates.length > 0 || summary.actionDateDuplicates.length > 0 || summary.conflicts.length > 0)
+      ? `
+        <div class="seg-conflict-summary">
+          <h4>⚠ 冲突检测结果</h4>
+          <div class="seg-conflict-list">
+            ${summary.exactDuplicates.length > 0 ? `
+              <div class="seg-conflict-item status-duplicate">
+                <span class="seg-conflict-count">${summary.exactDuplicates.length}</span>
+                <span class="seg-conflict-label">个完全重复计划（将跳过）</span>
+              </div>
+            ` : ""}
+            ${summary.actionDateDuplicates.length > 0 ? `
+              <div class="seg-conflict-item status-warning">
+                <span class="seg-conflict-count">${summary.actionDateDuplicates.length}</span>
+                <span class="seg-conflict-label">个同日同动作的其他分段</span>
+              </div>
+            ` : ""}
+            ${summary.conflicts.length > 0 ? `
+              <div class="seg-conflict-item status-info">
+                <span class="seg-conflict-count">${summary.conflicts.length}</span>
+                <span class="seg-conflict-label">个与普通计划冲突</span>
+              </div>
+            ` : ""}
+          </div>
+        </div>
+      `
+      : "";
 
     return `
       <div class="seg-preview">
@@ -648,8 +826,20 @@ const SegmentedPractice = (function () {
 
         <div class="seg-preview-toolbar">
           <button type="button" class="btn-small" id="segAddSegmentBtn">+ 添加分段</button>
-          <span class="muted">拖拽或使用按钮调整顺序</span>
+          <div class="seg-toolbar-spacer"></div>
+          <label class="seg-date-label">
+            开始日期
+            <input type="date" id="segPreviewStartDate" value="${scheduledDates[0] || formatDateKey(new Date())}">
+          </label>
+          <label class="seg-day-rate-label">
+            每天
+            <select id="segPreviewSessionsPerDay">
+              ${[1,2,3,4].map((n) => `<option value="${n}" ${(plan.params?.sessionsPerDay || 1) === n ? "selected" : ""}>${n} 节</option>`).join("")}
+            </select>
+          </label>
         </div>
+
+        ${conflictSummaryHtml}
 
         <div class="seg-preview-list">
           ${segmentsHtml || '<p class="muted">暂无分段</p>'}
@@ -668,6 +858,25 @@ const SegmentedPractice = (function () {
             <span class="seg-summary-label">总拍数</span>
             <span class="seg-summary-value">${sortedSegments.reduce((sum, s) => sum + s.beats, 0)} 拍</span>
           </div>
+          <div class="seg-summary-item seg-summary-success">
+            <span class="seg-summary-label">将写入</span>
+            <span class="seg-summary-value">${summary?.willCreate ?? sortedSegments.length} 条</span>
+          </div>
+        </div>
+
+        <div class="seg-write-options">
+          <label class="seg-check-label">
+            <input type="checkbox" id="segSkipExactDup" checked>
+            <span>跳过完全重复的计划</span>
+          </label>
+          <label class="seg-check-label">
+            <input type="checkbox" id="segSkipActionDateDup" checked>
+            <span>跳过同日同动作的其他分段</span>
+          </label>
+          <label class="seg-check-label">
+            <input type="checkbox" id="segSkipConflicts">
+            <span>跳过与普通计划冲突的</span>
+          </label>
         </div>
 
         <div class="modal-actions">
@@ -676,6 +885,92 @@ const SegmentedPractice = (function () {
         </div>
       </div>
     `;
+  }
+
+  function renderSegmentEditor(seg, dateKey) {
+    const allFrames = seg.actionId ? getActionFrames(seg.actionId) : [];
+    const allDims = getAllDimensions();
+    const allActions = getAvailableActions();
+
+    const framesHtml = allFrames.length
+      ? allFrames.map((f) => {
+          const checked = seg.frameIds.includes(f.id);
+          return `
+            <label class="seg-frame-check">
+              <input type="checkbox" name="segFrameIds" value="${f.id}" ${checked ? "checked" : ""} data-seg-frame="${seg.id}">
+              <span class="seg-frame-name">${escapeHtml(f.stage || "未命名")} · ${f.time || "无时间"}</span>
+            </label>
+          `;
+        }).join("")
+      : '<p class="muted">该动作没有关键帧</p>';
+
+    const dimsHtml = allDims.map((d) => {
+      const checked = seg.focusDimensions?.some((fd) => fd.key === d.key);
+      return `
+        <label class="seg-dim-check">
+          <input type="checkbox" name="segFocusDims" value="${d.key}" ${checked ? "checked" : ""} data-seg-dim="${seg.id}">
+          <span>${escapeHtml(d.label)}</span>
+        </label>
+      `;
+    }).join("");
+
+    const actionsHtml = allActions.map((a) => `
+      <option value="${a.id}" ${seg.actionId === a.id ? "selected" : ""}>${escapeHtml(a.name)}</option>
+    `).join("");
+
+    return `
+      <div class="seg-editor">
+        <div class="seg-editor-row">
+          <label class="seg-editor-label">分段名称</label>
+          <input type="text" class="seg-editor-input" id="segName_${seg.id}" value="${escapeHtml(seg.segmentName)}">
+        </div>
+
+        <div class="seg-editor-row">
+          <label class="seg-editor-label">关联动作</label>
+          <select class="seg-editor-select" id="segAction_${seg.id}" data-seg-action="${seg.id}">
+            <option value="">未关联</option>
+            ${actionsHtml}
+          </select>
+        </div>
+
+        <div class="seg-editor-row seg-editor-grid">
+          <label class="seg-editor-label">拍数</label>
+          <input type="number" class="seg-editor-input" id="segBeats_${seg.id}" min="1" max="64" value="${seg.beats || 8}">
+          <label class="seg-editor-label">日期</label>
+          <input type="date" class="seg-editor-input" id="segDate_${seg.id}" value="${dateKey}">
+        </div>
+
+        <div class="seg-editor-row">
+          <label class="seg-editor-label">练习目标</label>
+          <input type="text" class="seg-editor-input" id="segGoal_${seg.id}" value="${escapeHtml(seg.goal || "")}" placeholder="例如：掌握8拍节奏配合">
+        </div>
+
+        <div class="seg-editor-row">
+          <label class="seg-editor-label">重点维度</label>
+          <div class="seg-dim-list">
+            ${dimsHtml}
+          </div>
+        </div>
+
+        <div class="seg-editor-row">
+          <label class="seg-editor-label">关键帧选择 (${allFrames.length} 个)</label>
+          <div class="seg-frame-list">
+            ${framesHtml}
+          </div>
+        </div>
+
+        <div class="seg-editor-actions">
+          <button type="button" class="btn-small btn-accent" data-seg-save="${seg.id}">保存修改</button>
+          <button type="button" class="btn-small btn-secondary" data-seg-toggle="${seg.id}">取消</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function getAvailableActions() {
+    const appState = window.__appState;
+    if (!appState || !Array.isArray(appState.actions)) return [];
+    return appState.actions.map((a) => ({ id: a.id, name: a.name }));
   }
 
   function bindEvents() {
@@ -702,6 +997,7 @@ const SegmentedPractice = (function () {
     if (backBtn) {
       backBtn.addEventListener("click", () => {
         state.activePlanId = null;
+        state.expandedSegmentId = null;
         save();
         renderGeneratorModal();
       });
@@ -711,28 +1007,6 @@ const SegmentedPractice = (function () {
     if (writeBtn) {
       writeBtn.addEventListener("click", handleWriteToCalendar);
     }
-
-    const editBtns = document.querySelectorAll("[data-seg-edit]");
-    editBtns.forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        const segId = e.target.dataset.segEdit;
-        openSegmentEditor(segId);
-      });
-    });
-
-    const removeBtns = document.querySelectorAll("[data-seg-remove]");
-    removeBtns.forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        const segId = e.target.dataset.segRemove;
-        if (confirm("确定删除这个分段吗？")) {
-          const plan = getActivePlan();
-          if (plan) {
-            removeSegment(plan.id, segId);
-            renderGeneratorModal();
-          }
-        }
-      });
-    });
 
     const addSegBtn = document.getElementById("segAddSegmentBtn");
     if (addSegBtn) {
@@ -753,6 +1027,175 @@ const SegmentedPractice = (function () {
         renderGeneratorModal();
       });
     }
+
+    document.querySelectorAll("[data-seg-toggle]").forEach((el) => {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const segId = el.dataset.segToggle;
+        toggleSegmentExpand(segId);
+      });
+    });
+
+    document.querySelectorAll("[data-seg-up]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const segId = btn.dataset.segUp;
+        const plan = getActivePlan();
+        if (plan) {
+          reorderSegment(plan.id, segId, "up");
+          renderGeneratorModal();
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-seg-down]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const segId = btn.dataset.segDown;
+        const plan = getActivePlan();
+        if (plan) {
+          reorderSegment(plan.id, segId, "down");
+          renderGeneratorModal();
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-seg-remove]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const segId = btn.dataset.segRemove;
+        if (confirm("确定删除这个分段吗？")) {
+          const plan = getActivePlan();
+          if (plan) {
+            removeSegment(plan.id, segId);
+            renderGeneratorModal();
+          }
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-seg-save]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const segId = btn.dataset.segSave;
+        saveSegmentEdits(segId);
+      });
+    });
+
+    document.querySelectorAll("[data-seg-action]").forEach((select) => {
+      select.addEventListener("change", (e) => {
+        const segId = e.target.dataset.segAction;
+        const actionId = e.target.value;
+        handleSegmentActionChange(segId, actionId);
+      });
+    });
+
+    const startDateInput = document.getElementById("segPreviewStartDate");
+    if (startDateInput) {
+      startDateInput.addEventListener("change", (e) => {
+        const plan = getActivePlan();
+        if (plan) {
+          const sessionsPerDay = parseInt(document.getElementById("segPreviewSessionsPerDay")?.value, 10) || 1;
+          plan.scheduledDates = generateScheduleDates(plan.segments.length, e.target.value, sessionsPerDay);
+          plan.updatedAt = new Date().toISOString();
+          save();
+          renderGeneratorModal();
+        }
+      });
+    }
+
+    const sessionsSelect = document.getElementById("segPreviewSessionsPerDay");
+    if (sessionsSelect) {
+      sessionsSelect.addEventListener("change", (e) => {
+        const plan = getActivePlan();
+        if (plan) {
+          const sessionsPerDay = parseInt(e.target.value, 10) || 1;
+          plan.params.sessionsPerDay = sessionsPerDay;
+          const startDate = plan.scheduledDates?.[0] || formatDateKey(new Date());
+          plan.scheduledDates = generateScheduleDates(plan.segments.length, startDate, sessionsPerDay);
+          plan.updatedAt = new Date().toISOString();
+          save();
+          renderGeneratorModal();
+        }
+      });
+    }
+  }
+
+  function handleSegmentActionChange(segmentId, actionId) {
+    const plan = getActivePlan();
+    if (!plan) return;
+
+    const seg = plan.segments.find((s) => s.id === segmentId);
+    if (!seg) return;
+
+    if (!actionId) {
+      seg.actionId = null;
+      seg.actionSnapshotName = "未关联";
+      seg.frameIds = [];
+      seg.frames = [];
+    } else {
+      const action = window.__appState?.actions?.find((a) => a.id === actionId);
+      if (action) {
+        seg.actionId = action.id;
+        seg.actionSnapshotName = action.name;
+        const frames = getActionFrames(action.id);
+        seg.frameIds = frames.map((f) => f.id);
+        seg.frames = frames.map((f) => ({ ...f }));
+      }
+    }
+
+    plan.updatedAt = new Date().toISOString();
+    save();
+    renderGeneratorModal();
+  }
+
+  function saveSegmentEdits(segmentId) {
+    const plan = getActivePlan();
+    if (!plan) return;
+
+    const seg = plan.segments.find((s) => s.id === segmentId);
+    if (!seg) return;
+
+    const nameInput = document.getElementById(`segName_${segmentId}`);
+    const beatsInput = document.getElementById(`segBeats_${segmentId}`);
+    const dateInput = document.getElementById(`segDate_${segmentId}`);
+    const goalInput = document.getElementById(`segGoal_${segmentId}`);
+    const frameChecks = document.querySelectorAll(`[data-seg-frame="${segmentId}"]:checked`);
+    const dimChecks = document.querySelectorAll(`[data-seg-dim="${segmentId}"]:checked`);
+
+    const updates = {};
+
+    if (nameInput) updates.segmentName = nameInput.value.trim();
+    if (beatsInput) {
+      const beats = parseInt(beatsInput.value, 10);
+      if (!isNaN(beats) && beats > 0) {
+        updates.beats = Math.min(64, Math.max(1, beats));
+      }
+    }
+    if (goalInput) updates.goal = goalInput.value.trim();
+
+    if (frameChecks.length) {
+      updates.frameIds = Array.from(frameChecks).map((cb) => cb.value);
+    }
+
+    if (dimChecks.length) {
+      const allDims = getAllDimensions();
+      updates.focusDimensions = Array.from(dimChecks).map((cb) => {
+        const dim = allDims.find((d) => d.key === cb.value);
+        return dim ? { key: dim.key, label: dim.label } : null;
+      }).filter(Boolean);
+    }
+
+    updateSegment(plan.id, segmentId, updates);
+
+    if (dateInput && plan.scheduledDates) {
+      plan.scheduledDates[seg.segmentIndex] = dateInput.value;
+      plan.updatedAt = new Date().toISOString();
+      save();
+    }
+
+    showToast("分段已更新", "success");
+    renderGeneratorModal();
   }
 
   function handleGenerate() {
@@ -798,25 +1241,43 @@ const SegmentedPractice = (function () {
     const plan = getActivePlan();
     if (!plan) return;
 
-    const startDateInput = document.getElementById("segStartDate");
+    const startDateInput = document.getElementById("segPreviewStartDate");
+    const sessionsPerDaySelect = document.getElementById("segPreviewSessionsPerDay");
+    const skipExactDup = document.getElementById("segSkipExactDup");
+    const skipActionDateDup = document.getElementById("segSkipActionDateDup");
+    const skipConflicts = document.getElementById("segSkipConflicts");
+
     const startDate = startDateInput?.value || plan.scheduledDates?.[0] || formatDateKey(new Date());
-    const sessionsPerDay = plan.params?.sessionsPerDay || 1;
+    const sessionsPerDay = parseInt(sessionsPerDaySelect?.value, 10) || plan.params?.sessionsPerDay || 1;
 
-    const { duplicates, conflicts } = checkForDuplicates(plan.id, startDate, sessionsPerDay);
+    const summary = getConflictSummary(plan.id, startDate, sessionsPerDay);
 
-    let message = `确认将 ${plan.segments.length} 个分段练习计划写入日历？\n\n`;
-    message += `开始日期: ${startDate}\n`;
-    message += `每天课次: ${sessionsPerDay} 节\n`;
-    if (duplicates.length) message += `\n⚠ 发现 ${duplicates.length} 个重复计划（将跳过）`;
-    if (conflicts.length) message += `\n⚠ 发现 ${conflicts.length} 个同日同动作的其他计划`;
+    let message = `确认将分段练习方案写入日历？\n\n`;
+    message += `• 总分段数: ${summary.total}\n`;
+    message += `• 开始日期: ${startDate}\n`;
+    message += `• 每天课次: ${sessionsPerDay} 节\n`;
+    message += `• 预计写入: ${summary.willCreate} 条\n`;
+
+    if (summary.exactDuplicates > 0) {
+      message += `\n⚠ ${summary.exactDuplicates} 个完全重复的计划将被跳过`;
+    }
+    if (summary.actionDateDuplicates > 0) {
+      message += `\n⚠ ${summary.actionDateDuplicates} 个同日同动作的其他分段`;
+    }
+    if (summary.conflicts > 0) {
+      message += `\n⚠ ${summary.conflicts} 个与普通计划冲突`;
+    }
+
+    message += `\n\n是否继续？`;
 
     if (!confirm(message)) return;
 
     const created = writeToCalendar(plan.id, {
       startDate,
       sessionsPerDay,
-      skipDuplicates: true,
-      skipConflicts: false,
+      skipExactDuplicates: skipExactDup?.checked ?? true,
+      skipActionDateDuplicates: skipActionDateDup?.checked ?? true,
+      skipConflicts: skipConflicts?.checked ?? false,
     });
 
     if (created.length > 0) {
@@ -828,17 +1289,7 @@ const SegmentedPractice = (function () {
   }
 
   function openSegmentEditor(segmentId) {
-    const plan = getActivePlan();
-    if (!plan) return;
-
-    const segment = plan.segments.find((s) => s.id === segmentId);
-    if (!segment) return;
-
-    const newName = prompt("编辑分段名称:", segment.segmentName);
-    if (newName != null && newName.trim()) {
-      updateSegment(plan.id, segmentId, { segmentName: newName.trim() });
-      renderGeneratorModal();
-    }
+    toggleSegmentExpand(segmentId);
   }
 
   function escapeHtml(str) {
@@ -945,6 +1396,9 @@ const SegmentedPractice = (function () {
     getNextSegment,
     getPrevSegment,
     findPlanBySegmentId,
+    detectCrossGenerationConflicts,
+    getConflictSummary,
+    checkForDuplicates,
     SEGMENT_TYPE,
   };
 })();
