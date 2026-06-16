@@ -518,10 +518,10 @@ const SegmentedPractice = (function () {
 
     return {
       total,
-      exactDuplicates: exactDupCount,
-      actionDateDuplicates: actionDateDupCount,
-      conflicts: conflictCount,
-      willCreate: total - exactDupCount,
+      exactDuplicateCount: exactDupCount,
+      actionDateDuplicateCount: actionDateDupCount,
+      conflictCount,
+      willCreate: Math.max(0, total - exactDupCount - actionDateDupCount),
       ...conflicts,
     };
   }
@@ -786,7 +786,7 @@ const SegmentedPractice = (function () {
       `;
     }).join("");
 
-    const conflictSummaryHtml = summary && (summary.exactDuplicates.length > 0 || summary.actionDateDuplicates.length > 0 || summary.conflicts.length > 0)
+    const conflictSummaryHtml = summary && (summary.exactDuplicates.length > 0 || summary.actionDateDuplicates.length > 0 || summary.sameDayConflicts.length > 0)
       ? `
         <div class="seg-conflict-summary">
           <h4>⚠ 冲突检测结果</h4>
@@ -803,9 +803,9 @@ const SegmentedPractice = (function () {
                 <span class="seg-conflict-label">个同日同动作的其他分段</span>
               </div>
             ` : ""}
-            ${summary.conflicts.length > 0 ? `
+            ${summary.sameDayConflicts.length > 0 ? `
               <div class="seg-conflict-item status-info">
-                <span class="seg-conflict-count">${summary.conflicts.length}</span>
+                <span class="seg-conflict-count">${summary.sameDayConflicts.length}</span>
                 <span class="seg-conflict-label">个与普通计划冲突</span>
               </div>
             ` : ""}
@@ -1256,16 +1256,24 @@ const SegmentedPractice = (function () {
     message += `• 总分段数: ${summary.total}\n`;
     message += `• 开始日期: ${startDate}\n`;
     message += `• 每天课次: ${sessionsPerDay} 节\n`;
-    message += `• 预计写入: ${summary.willCreate} 条\n`;
+    const expectedCreate = Math.max(
+      0,
+      summary.total
+        - (skipExactDup?.checked ?? true ? summary.exactDuplicates.length : 0)
+        - (skipActionDateDup?.checked ?? true ? summary.actionDateDuplicates.length : 0)
+        - (skipConflicts?.checked ?? false ? summary.sameDayConflicts.length : 0)
+    );
 
-    if (summary.exactDuplicates > 0) {
-      message += `\n⚠ ${summary.exactDuplicates} 个完全重复的计划将被跳过`;
+    message += `• 预计写入: ${expectedCreate} 条\n`;
+
+    if (summary.exactDuplicates.length > 0) {
+      message += `\n⚠ ${summary.exactDuplicates.length} 个完全重复的计划${skipExactDup?.checked ?? true ? "将被跳过" : "不会跳过"}`;
     }
-    if (summary.actionDateDuplicates > 0) {
-      message += `\n⚠ ${summary.actionDateDuplicates} 个同日同动作的其他分段`;
+    if (summary.actionDateDuplicates.length > 0) {
+      message += `\n⚠ ${summary.actionDateDuplicates.length} 个同日同动作的其他分段${skipActionDateDup?.checked ?? true ? "将被跳过" : "不会跳过"}`;
     }
-    if (summary.conflicts > 0) {
-      message += `\n⚠ ${summary.conflicts} 个与普通计划冲突`;
+    if (summary.sameDayConflicts.length > 0) {
+      message += `\n⚠ ${summary.sameDayConflicts.length} 个与普通计划冲突${skipConflicts?.checked ?? false ? "将被跳过" : "不会跳过"}`;
     }
 
     message += `\n\n是否继续？`;
@@ -1402,3 +1410,5 @@ const SegmentedPractice = (function () {
     SEGMENT_TYPE,
   };
 })();
+
+window.SegmentedPractice = SegmentedPractice;
