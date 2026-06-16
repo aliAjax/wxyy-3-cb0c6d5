@@ -1,4 +1,7 @@
 const Choreography = (function () {
+  const escapeHtml = window.Utils.escapeHtml;
+  const formatDate = window.Utils.formatDate;
+
   const state = {
     choreographies: [],
     activeChoreographyId: null,
@@ -932,21 +935,6 @@ const Choreography = (function () {
         window.__saveAppState();
       }
     }
-  }
-
-  function escapeHtml(str) {
-    if (str == null) return "";
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
-
-  function formatDate(iso) {
-    const d = new Date(iso);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   }
 
   function bindEvents() {

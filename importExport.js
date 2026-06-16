@@ -1,4 +1,9 @@
 const ImportExport = (function () {
+  const escapeHtml = window.Utils.escapeHtml;
+  const formatDate = window.Utils.formatDate;
+  const formatSize = window.Utils.formatSize;
+  const showToast = window.Utils.showToast;
+
   const BACKUP_VERSION = 4;
   const MIN_SUPPORTED_VERSION = 1;
 
@@ -29,48 +34,6 @@ const ImportExport = (function () {
     PLANS: "plans",
     MEDIA: "media"
   };
-
-  function escapeHtml(str) {
-    if (str == null) return "";
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
-
-  function formatDate(iso) {
-    if (!iso) return "-";
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return "-";
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  }
-
-  function formatSize(bytes) {
-    if (!bytes || bytes < 1024) return `${bytes || 0} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-    return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
-  }
-
-  function showToast(message, type = "info", duration = 3000) {
-    if (typeof window.showToast === "function") {
-      window.showToast(message, type, duration);
-      return;
-    }
-    const container = document.querySelector("#toastContainer");
-    if (!container) return;
-    const toast = document.createElement("div");
-    toast.className = `toast toast-${type}`;
-    toast.textContent = message;
-    container.appendChild(toast);
-    setTimeout(() => {
-      toast.style.opacity = "0";
-      toast.style.transform = "translateY(-10px)";
-      setTimeout(() => toast.remove(), 300);
-    }, duration);
-  }
 
   function getAppState() {
     return window.__appState;
@@ -2367,9 +2330,6 @@ const ImportExport = (function () {
     bindImportEvents();
     if (!window.__renderAll && window.renderAll) {
       window.__renderAll = window.renderAll;
-    }
-    if (!window.showToast) {
-      window.showToast = showToast;
     }
   }
 

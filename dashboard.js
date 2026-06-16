@@ -1,28 +1,9 @@
 const PracticeLoopDashboard = (function () {
-  function escapeHtml(str) {
-    if (str == null) return "";
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
-
-  function formatDateShort(iso) {
-    if (!iso) return "-";
-    const d = new Date(iso);
-    return `${d.getMonth() + 1}/${d.getDate()}`;
-  }
-
-  function formatDateKey(date) {
-    const d = new Date(date);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }
-
-  function getTodayKey() {
-    return formatDateKey(new Date());
-  }
+  const escapeHtml = window.Utils.escapeHtml;
+  const formatDateShort = window.Utils.formatDateShortSlash;
+  const formatDateKey = window.Utils.formatDateKey;
+  const getTodayKey = window.Utils.getTodayKey;
+  const showToast = window.Utils.showToast;
 
   function getDaysAgoKey(n) {
     const d = new Date();

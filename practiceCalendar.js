@@ -1,4 +1,10 @@
 const PracticeCalendar = (function () {
+  const escapeHtml = window.Utils.escapeHtml;
+  const showToast = window.Utils.showToast;
+  const formatDateKey = window.Utils.formatDateKey;
+  const parseDateKey = window.Utils.parseDateKey;
+  const getTodayKey = window.Utils.getTodayKey;
+
   const STORAGE_KEY = "wxyy-3-practice-calendar";
 
   let currentDate = new Date();
@@ -7,20 +13,6 @@ const PracticeCalendar = (function () {
   let modalEventsBound = false;
   let isSubmitting = false;
   let isBatchSubmitting = false;
-
-  function formatDateKey(date) {
-    const d = new Date(date);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }
-
-  function parseDateKey(key) {
-    const [y, m, d] = key.split("-").map(Number);
-    return new Date(y, m - 1, d);
-  }
-
-  function getTodayKey() {
-    return formatDateKey(new Date());
-  }
 
   function isPastDate(dateKey) {
     return dateKey < getTodayKey();
@@ -348,23 +340,6 @@ const PracticeCalendar = (function () {
       firstDay: formatDateKey(firstDay),
       lastDay: formatDateKey(lastDay)
     };
-  }
-
-  function escapeHtml(str) {
-    if (str == null) return "";
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
-
-  function showToast(message, type = "info", duration = 3000) {
-    if (typeof window.showToast === "function") {
-      window.showToast(message, type, duration);
-      return;
-    }
   }
 
   function getReferenceOptions() {

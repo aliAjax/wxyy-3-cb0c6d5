@@ -5,7 +5,6 @@ window.__appState = state;
 window.__saveAppState = save;
 window.__switchMainTab = switchMainTab;
 window.__renderAll = () => renderAll();
-window.showToast = showToast;
 
 const actionForm = document.querySelector("#actionForm");
 const frameForm = document.querySelector("#frameForm");
@@ -60,7 +59,6 @@ const mediaLibWarnings = document.querySelector("#mediaLibWarnings");
 const cleanupOrphanBtn = document.querySelector("#cleanupOrphanBtn");
 const mediaLibStats = document.querySelector("#mediaLibStats");
 const mediaSortSelect = document.querySelector("#mediaSortSelect");
-const toastContainer = document.querySelector("#toastContainer");
 
 const versionHistoryModal = document.querySelector("#versionHistoryModal");
 const versionList = document.querySelector("#versionList");
@@ -95,26 +93,6 @@ let annotationsHidden = false;
 let editingAnnotationId = null;
 let draggingAnnotationId = null;
 let dragOffset = { x: 0, y: 0 };
-
-function showToast(message, type = "info", duration = 3000) {
-  if (!toastContainer) return;
-  const toast = document.createElement("div");
-  toast.className = `toast toast-${type}`;
-  toast.textContent = message;
-  toastContainer.appendChild(toast);
-  setTimeout(() => {
-    toast.style.opacity = "0";
-    toast.style.transform = "translateY(-10px)";
-    setTimeout(() => toast.remove(), 300);
-  }, duration);
-}
-
-function formatSize(bytes) {
-  if (!bytes || bytes < 1024) return `${bytes || 0} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}
 
 function save() {
   localStorage.setItem(storageKey, JSON.stringify(state));
@@ -180,16 +158,6 @@ function activeAction() {
 
 function activeSession() {
   return state.sessions.find((s) => s.id === state.activeSessionId) || null;
-}
-
-function escapeHtml(str) {
-  if (str == null) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function getMediaDisplayRect() {
@@ -647,13 +615,6 @@ function formatDuration(secs) {
   const m = Math.floor(s / 60);
   const r = s % 60;
   return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
-}
-
-function formatDate(iso) {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "-";
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 function statusBadge(status) {

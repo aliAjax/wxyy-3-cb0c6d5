@@ -1,4 +1,9 @@
 const ReviewScoring = (function () {
+  const escapeHtml = window.Utils.escapeHtml;
+  const formatDate = window.Utils.formatDate;
+  const formatDateShort = window.Utils.formatDateShort;
+  const showToast = window.Utils.showToast;
+
   const DIMENSIONS = [
     { key: "centerStability", label: "重心稳定", sliderClass: "slider-centerStability", fillClass: "dim-centerStability", color: "#8d2847" },
     { key: "sleeveContinuity", label: "袖路连贯", sliderClass: "slider-sleeveContinuity", fillClass: "dim-sleeveContinuity", color: "#b78a34" },
@@ -138,26 +143,6 @@ const ReviewScoring = (function () {
       );
     });
     return series;
-  }
-
-  function formatDateShort(iso) {
-    const d = new Date(iso);
-    return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }
-
-  function escapeHtml(str) {
-    if (str == null) return "";
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
-
-  function formatDate(iso) {
-    const d = new Date(iso);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   }
 
   function renderScoreSummary() {

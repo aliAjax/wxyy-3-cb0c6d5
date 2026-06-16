@@ -10,6 +10,7 @@ const {
 
 installGlobals();
 resetAppState();
+loadScript("utils.js");
 loadScript("review.js");
 
 const RS = window.ReviewScoring;

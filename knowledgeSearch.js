@@ -1,4 +1,7 @@
 const KnowledgeSearch = (function () {
+  const escapeHtml = window.Utils.escapeHtml;
+  const showToast = window.Utils.showToast;
+
   const TYPE_CONFIG = {
     action: { label: "动作", icon: "🎯", color: "#8d2847" },
     frame: { label: "关键帧", icon: "🎬", color: "#b78a34" },
@@ -1104,22 +1107,6 @@ const KnowledgeSearch = (function () {
     if (overlay) {
       overlay.classList.remove("visible");
       searchPanelVisible = false;
-    }
-  }
-
-  function escapeHtml(str) {
-    if (str == null) return "";
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
-
-  function showToast(message, type = "info", duration = 3000) {
-    if (typeof window.showToast === "function") {
-      window.showToast(message, type, duration);
     }
   }
 

@@ -10,6 +10,7 @@ const {
 
 installGlobals();
 resetAppState();
+loadScript("utils.js");
 loadScript("practiceCalendar.js");
 
 const PC = window.PracticeCalendar;

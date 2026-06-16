@@ -1,4 +1,8 @@
 const SegmentedPractice = (function () {
+  const escapeHtml = window.Utils.escapeHtml;
+  const showToast = window.Utils.showToast;
+  const formatDateKey = window.Utils.formatDateKey;
+
   const STORAGE_KEY = "wxyy-3-segmented-practice";
   const SEGMENT_TYPE = "segmented";
 
@@ -274,11 +278,6 @@ const SegmentedPractice = (function () {
     }
 
     return dates;
-  }
-
-  function formatDateKey(date) {
-    const d = new Date(date);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }
 
   function updateSegment(planId, segmentId, updates) {
@@ -1298,24 +1297,6 @@ const SegmentedPractice = (function () {
 
   function openSegmentEditor(segmentId) {
     toggleSegmentExpand(segmentId);
-  }
-
-  function escapeHtml(str) {
-    if (str == null) return "";
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
-
-  function showToast(msg, type = "info") {
-    if (typeof window.showToast === "function") {
-      window.showToast(msg, type);
-    } else {
-      console.log(`[${type}] ${msg}`);
-    }
   }
 
   function startSegmentedSession(segmentId) {
