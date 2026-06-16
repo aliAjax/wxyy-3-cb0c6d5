@@ -102,6 +102,20 @@ const ActionVersioning = (function () {
     return labels.slice(0, 2).join("、") + "等更新";
   }
 
+  function ensureInitialSnapshot(action) {
+    const versions = ensureVersionsArray(action);
+    if (versions.length === 0) {
+      const initialSnapshot = createSnapshot(action, [], "初始版本");
+      if (initialSnapshot) {
+        initialSnapshot.versionNumber = 1;
+        initialSnapshot.createdAt = action.createdAt || action.updatedAt || new Date().toISOString();
+        versions.push(initialSnapshot);
+        return true;
+      }
+    }
+    return false;
+  }
+
   function saveVersion(actionId, changeTypes = [], changeDescription = "", force = false) {
     const state = getState();
     const action = state.actions && state.actions.find((a) => a.id === actionId);
@@ -116,13 +130,7 @@ const ActionVersioning = (function () {
     const doSnapshot = () => {
       debounceTimers.delete(actionId);
 
-      if (versions.length === 0) {
-        const initialSnapshot = createSnapshot(action, [], "初始版本");
-        if (initialSnapshot) {
-          initialSnapshot.versionNumber = 1;
-          versions.push(initialSnapshot);
-        }
-      }
+      ensureInitialSnapshot(action);
 
       if (changeTypes.length === 0 && versions.length > 0) {
         return;
@@ -255,48 +263,62 @@ const ActionVersioning = (function () {
       },
     };
 
+    function getFrameKey(f, index) {
+      if (f && f.id) return f.id;
+      return `__idx_${index}_${(f && f.stage) || ''}_${(f && f.time) || ''}`;
+    }
+
     const framesA = versionA.frames || [];
     const framesB = versionB.frames || [];
-    const frameMapA = new Map(framesA.map((f) => [f.id, f]));
-    const frameMapB = new Map(framesB.map((f) => [f.id, f]));
+    const frameMapA = new Map(framesA.map((f, i) => [getFrameKey(f, i), f]));
+    const frameMapB = new Map(framesB.map((f, i) => [getFrameKey(f, i), f]));
 
-    framesB.forEach((f) => {
-      if (!frameMapA.has(f.id)) {
+    framesB.forEach((f, i) => {
+      const key = getFrameKey(f, i);
+      if (!frameMapA.has(key)) {
         diff.frames.added.push(f);
       } else {
-        const old = frameMapA.get(f);
+        const old = frameMapA.get(key);
         if (JSON.stringify(old) !== JSON.stringify(f)) {
           diff.frames.modified.push({ old, new: f });
         }
       }
     });
 
-    framesA.forEach((f) => {
-      if (!frameMapB.has(f.id)) {
+    framesA.forEach((f, i) => {
+      const key = getFrameKey(f, i);
+      if (!frameMapB.has(key)) {
         diff.frames.removed.push(f);
       }
     });
 
     diff.frames.changed = diff.frames.added.length > 0 || diff.frames.removed.length > 0 || diff.frames.modified.length > 0;
 
+    function getAnnKey(a, index) {
+      if (a && a.id) return a.id;
+      return `__idx_${index}_${(a && a.bodyPart) || ''}_${(a && a.timestamp) || ''}`;
+    }
+
     const annA = versionA.annotations || [];
     const annB = versionB.annotations || [];
-    const annMapA = new Map(annA.map((a) => [a.id, a]));
-    const annMapB = new Map(annB.map((a) => [a.id, a]));
+    const annMapA = new Map(annA.map((a, i) => [getAnnKey(a, i), a]));
+    const annMapB = new Map(annB.map((a, i) => [getAnnKey(a, i), a]));
 
-    annB.forEach((a) => {
-      if (!annMapA.has(a.id)) {
+    annB.forEach((a, i) => {
+      const key = getAnnKey(a, i);
+      if (!annMapA.has(key)) {
         diff.annotations.added.push(a);
       } else {
-        const old = annMapA.get(a.id);
+        const old = annMapA.get(key);
         if (JSON.stringify(old) !== JSON.stringify(a)) {
           diff.annotations.modified.push({ old, new: a });
         }
       }
     });
 
-    annA.forEach((a) => {
-      if (!annMapB.has(a.id)) {
+    annA.forEach((a, i) => {
+      const key = getAnnKey(a, i);
+      if (!annMapB.has(key)) {
         diff.annotations.removed.push(a);
       }
     });
@@ -357,8 +379,9 @@ const ActionVersioning = (function () {
     state.actions.forEach((action) => {
       const before = JSON.stringify(action.versions || []);
       migrateActionVersions(action);
+      const created = ensureInitialSnapshot(action);
       const after = JSON.stringify(action.versions || []);
-      if (before !== after) migrated = true;
+      if (before !== after || created) migrated = true;
     });
     if (migrated) {
       saveState();
@@ -396,6 +419,7 @@ const ActionVersioning = (function () {
     clearAllVersions,
     getStorageEstimate,
     generateChangeDescription,
+    ensureInitialSnapshot,
     MAX_VERSIONS_PER_ACTION,
   };
 })();
