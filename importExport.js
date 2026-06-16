@@ -105,6 +105,7 @@ const ImportExport = (function () {
     actions.forEach((action) => {
       if (!Array.isArray(action.frames)) action.frames = [];
       if (!Array.isArray(action.annotations)) action.annotations = [];
+      if (!Array.isArray(action.versions)) action.versions = [];
     });
 
     const mediaIds = collectMediaIdsFromState(actions);
@@ -237,6 +238,27 @@ const ImportExport = (function () {
     }
     if (!action.createdAt || isNaN(new Date(action.createdAt).getTime())) {
       action.createdAt = new Date().toISOString();
+    }
+    if (!Array.isArray(action.versions)) {
+      action.versions = [];
+    } else {
+      action.versions = action.versions.filter((v) => v && typeof v === "object").map((v, i) => ({
+        id: v.id || crypto.randomUUID(),
+        versionNumber: v.versionNumber || i + 1,
+        createdAt: v.createdAt || new Date().toISOString(),
+        changeTypes: Array.isArray(v.changeTypes) ? v.changeTypes : [],
+        changeDescription: v.changeDescription || "历史版本",
+        name: typeof v.name === "string" ? v.name : "",
+        tags: typeof v.tags === "string" ? v.tags : "",
+        frames: Array.isArray(v.frames) ? v.frames.map((f) => ({ ...f })) : [],
+        annotations: Array.isArray(v.annotations) ? v.annotations.map((a) => ({ ...a })) : [],
+        mediaId: v.mediaId || null,
+        mediaRef: v.mediaRef ? { ...v.mediaRef } : null,
+        restoredFrom: v.restoredFrom || null,
+      }));
+      action.versions.forEach((v, i) => {
+        v.versionNumber = i + 1;
+      });
     }
     return { valid: true, issues, sanitized: action };
   }

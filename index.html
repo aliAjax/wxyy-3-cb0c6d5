@@ -135,6 +135,17 @@
             </div>
             <div id="actionHistoryList" class="history-list"></div>
           </div>
+
+          <div class="version-history-section">
+            <div class="section-header-row">
+              <h2>版本历史</h2>
+              <div class="version-header-actions">
+                <span class="version-count" id="versionCount">0 个版本</span>
+                <button type="button" id="openVersionHistoryBtn" class="btn-small btn-secondary">📜 查看历史</button>
+              </div>
+            </div>
+            <div id="versionSummary" class="version-summary"></div>
+          </div>
         </div>
 
         <div class="m-tab-panel" id="mtab-dashboard">
@@ -761,6 +772,60 @@
       </div>
     </div>
 
+    <div class="modal-mask" id="versionHistoryModal" hidden>
+      <div class="modal version-history-modal">
+        <header class="modal-head">
+          <h3>版本历史</h3>
+          <button class="modal-close" type="button" data-close-version-history>×</button>
+        </header>
+        <div class="modal-body">
+          <div class="version-history-header">
+            <div class="version-action-name" id="versionActionName">-</div>
+            <div class="version-storage-info" id="versionStorageInfo"></div>
+          </div>
+          <div class="version-compare-bar">
+            <span>对比模式：</span>
+            <label class="version-compare-toggle">
+              <input type="checkbox" id="versionCompareToggle">
+              <span>启用对比</span>
+            </label>
+            <span class="version-compare-hint" id="versionCompareHint" hidden>选择两个版本进行对比</span>
+          </div>
+          <div class="version-list" id="versionList"></div>
+        </div>
+        <footer class="modal-foot version-modal-foot">
+          <button type="button" class="btn-secondary" data-close-version-history>关闭</button>
+          <button type="button" class="btn-accent" id="restoreVersionBtn" disabled>恢复此版本</button>
+        </footer>
+      </div>
+    </div>
+
+    <div class="modal-mask" id="versionCompareModal" hidden>
+      <div class="modal version-compare-modal">
+        <header class="modal-head">
+          <h3>版本对比</h3>
+          <button class="modal-close" type="button" data-close-version-compare>×</button>
+        </header>
+        <div class="modal-body">
+          <div class="version-compare-header">
+            <div class="version-compare-side">
+              <span class="version-label">旧版本</span>
+              <span class="version-info" id="compareOldInfo">-</span>
+            </div>
+            <div class="version-compare-arrow">→</div>
+            <div class="version-compare-side">
+              <span class="version-label">新版本</span>
+              <span class="version-info" id="compareNewInfo">-</span>
+            </div>
+          </div>
+          <div class="version-compare-content" id="versionCompareContent"></div>
+        </div>
+        <footer class="modal-foot">
+          <button type="button" class="btn-secondary" data-close-version-compare>关闭</button>
+        </footer>
+      </div>
+    </div>
+
     <div class="knowledge-search-overlay" id="knowledgeSearchOverlay">
       <div class="knowledge-search-panel" id="knowledgeSearchPanel">
         <div class="ks-panel-inner">
@@ -785,6 +850,7 @@
   <script src="./practiceCalendar.js"></script>
   <script src="./knowledgeSearch.js"></script>
   <script src="./dashboard.js"></script>
+  <script src="./actionVersioning.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

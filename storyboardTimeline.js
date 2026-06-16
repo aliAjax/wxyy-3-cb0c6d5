@@ -184,6 +184,12 @@ const StoryboardTimeline = (function () {
     if (typeof window.__saveAppState === "function") {
       window.__saveAppState();
     }
+    if (typeof window.ActionVersioning !== "undefined" && typeof window.ActionVersioning.saveVersion === "function") {
+      const action = getActiveAction();
+      if (action && action.id) {
+        window.ActionVersioning.saveVersion(action.id, ["frames"], "分镜工作台编辑");
+      }
+    }
   }
 
   function getFrameById(frameId) {

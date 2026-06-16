@@ -62,6 +62,25 @@ const mediaLibStats = document.querySelector("#mediaLibStats");
 const mediaSortSelect = document.querySelector("#mediaSortSelect");
 const toastContainer = document.querySelector("#toastContainer");
 
+const versionHistoryModal = document.querySelector("#versionHistoryModal");
+const versionList = document.querySelector("#versionList");
+const versionActionName = document.querySelector("#versionActionName");
+const versionStorageInfo = document.querySelector("#versionStorageInfo");
+const versionCount = document.querySelector("#versionCount");
+const versionSummary = document.querySelector("#versionSummary");
+const openVersionHistoryBtn = document.querySelector("#openVersionHistoryBtn");
+const restoreVersionBtn = document.querySelector("#restoreVersionBtn");
+const versionCompareToggle = document.querySelector("#versionCompareToggle");
+const versionCompareHint = document.querySelector("#versionCompareHint");
+const versionCompareModal = document.querySelector("#versionCompareModal");
+const versionCompareContent = document.querySelector("#versionCompareContent");
+const compareOldInfo = document.querySelector("#compareOldInfo");
+const compareNewInfo = document.querySelector("#compareNewInfo");
+
+let selectedVersionId = null;
+let compareVersionIds = [];
+let compareMode = false;
+
 let mediaFilter = "all";
 let mediaSort = "createdAt-desc";
 
@@ -371,6 +390,9 @@ function createAnnotation(x, y) {
 
   action.annotations.push(annotation);
   save();
+  if (window.ActionVersioning) {
+    window.ActionVersioning.saveVersion(action.id, ["annotations"], "添加批注");
+  }
   openAnnotationModal(annotation);
   renderAnnotations();
 }
@@ -419,6 +441,9 @@ function updateAnnotationFromForm() {
   }
   
   save();
+  if (window.ActionVersioning) {
+    window.ActionVersioning.saveVersion(action.id, ["annotations"], editingAnnotationId ? "更新批注" : "添加批注");
+  }
   closeAnnotationModal();
   renderAnnotations();
   if (window.StoryboardTimeline && typeof window.StoryboardTimeline.renderAll === "function") {
@@ -434,6 +459,9 @@ function deleteAnnotation() {
   ensureActionAnnotations(action);
   action.annotations = action.annotations.filter((a) => a.id !== editingAnnotationId);
   save();
+  if (window.ActionVersioning) {
+    window.ActionVersioning.saveVersion(action.id, ["annotations"], "删除批注");
+  }
   closeAnnotationModal();
   renderAnnotations();
   if (window.StoryboardTimeline && typeof window.StoryboardTimeline.renderAll === "function") {
@@ -622,7 +650,9 @@ function formatDuration(secs) {
 }
 
 function formatDate(iso) {
+  if (!iso) return "-";
   const d = new Date(iso);
+  if (isNaN(d.getTime())) return "-";
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
@@ -794,6 +824,327 @@ function renderActionHistory() {
   actionHistoryList.innerHTML = html;
 }
 
+function renderVersionSummary() {
+  const action = activeAction();
+  if (!action || !versionSummary || !versionCount) return;
+
+  if (!window.ActionVersioning) {
+    versionCount.textContent = "0 个版本";
+    versionSummary.innerHTML = `<p class="version-summary-empty">版本历史功能不可用</p>`;
+    return;
+  }
+
+  const versions = window.ActionVersioning.getVersions(action.id);
+  const count = versions.length;
+
+  versionCount.textContent = `${count} 个版本`;
+
+  if (count === 0) {
+    versionSummary.innerHTML = `<p class="version-summary-empty">暂无历史版本，修改动作后将自动记录</p>`;
+    return;
+  }
+
+  const latest = versions[versions.length - 1];
+  const storage = window.ActionVersioning.getStorageEstimate(action.id);
+
+  versionSummary.innerHTML = `
+    <p>最新版本：v${latest.versionNumber} · ${formatDate(latest.createdAt)}</p>
+    <p style="margin-top:4px;">${escapeHtml(latest.changeDescription || "更新")}</p>
+  `;
+}
+
+function openVersionHistoryModal() {
+  const action = activeAction();
+  if (!action || !versionHistoryModal) return;
+
+  if (!window.ActionVersioning) {
+    showToast("版本历史功能不可用", "error");
+    return;
+  }
+
+  selectedVersionId = null;
+  compareVersionIds = [];
+  compareMode = false;
+  if (versionCompareToggle) versionCompareToggle.checked = false;
+  if (versionCompareHint) versionCompareHint.hidden = true;
+
+  if (versionActionName) {
+    versionActionName.textContent = action.name;
+  }
+
+  renderVersionList();
+  updateRestoreButtonState();
+
+  versionHistoryModal.hidden = false;
+}
+
+function closeVersionHistoryModal() {
+  if (versionHistoryModal) {
+    versionHistoryModal.hidden = true;
+  }
+  selectedVersionId = null;
+  compareVersionIds = [];
+  compareMode = false;
+}
+
+function renderVersionList() {
+  const action = activeAction();
+  if (!action || !versionList || !window.ActionVersioning) return;
+
+  const versions = window.ActionVersioning.getVersions(action.id);
+  const reversed = [...versions].reverse();
+
+  if (reversed.length === 0) {
+    versionList.innerHTML = `<p class="compare-empty">暂无历史版本</p>`;
+    return;
+  }
+
+  const storage = window.ActionVersioning.getStorageEstimate(action.id);
+  if (versionStorageInfo) {
+    versionStorageInfo.textContent = `共 ${storage.versionCount} 个版本 · 约 ${formatSize(storage.totalBytes)}`;
+  }
+
+  versionList.innerHTML = reversed.map((v) => {
+    const isSelected = selectedVersionId === v.id;
+    const isCompareSelected = compareVersionIds.includes(v.id);
+    const chipsHtml = v.changeTypes && v.changeTypes.length > 0
+      ? v.changeTypes.map((t) => `<span class="version-chip chip-${t}">${window.ActionVersioning.ChangeLabels[t] || t}</span>`).join("")
+      : "";
+    const restoreChip = v.restoredFrom ? `<span class="version-chip chip-restore">恢复版本</span>` : "";
+
+    return `
+      <div class="version-item ${isSelected ? "selected" : ""} ${isCompareSelected ? "compare-selected" : ""}" 
+           data-version-id="${v.id}"
+           data-action="select-version">
+        <div class="version-item-header">
+          <span class="version-number">v${v.versionNumber}</span>
+          <span class="version-date">${formatDate(v.createdAt)}</span>
+        </div>
+        <div class="version-desc">${escapeHtml(v.changeDescription || "更新")}</div>
+        <div class="version-chips">
+          ${chipsHtml}
+          ${restoreChip}
+        </div>
+        <div class="version-item-stats">
+          <span>🎬 ${v.frames ? v.frames.length : 0} 帧</span>
+          <span>📝 ${v.annotations ? v.annotations.length : 0} 批注</span>
+          ${v.mediaId ? '<span>🎞️ 有素材</span>' : '<span>🎞️ 无素材</span>'}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function updateRestoreButtonState() {
+  if (!restoreVersionBtn) return;
+  restoreVersionBtn.disabled = !selectedVersionId;
+}
+
+function selectVersion(versionId) {
+  const action = activeAction();
+  if (!action || !window.ActionVersioning) return;
+
+  if (compareMode) {
+    const idx = compareVersionIds.indexOf(versionId);
+    if (idx > -1) {
+      compareVersionIds.splice(idx, 1);
+    } else {
+      if (compareVersionIds.length >= 2) {
+        compareVersionIds.shift();
+      }
+      compareVersionIds.push(versionId);
+    }
+
+    if (compareVersionIds.length === 2) {
+      showVersionCompare();
+    }
+  } else {
+    selectedVersionId = versionId;
+  }
+
+  renderVersionList();
+  updateRestoreButtonState();
+}
+
+function showVersionCompare() {
+  const action = activeAction();
+  if (!action || !window.ActionVersioning || compareVersionIds.length !== 2) return;
+
+  const v1 = window.ActionVersioning.getVersion(action.id, compareVersionIds[0]);
+  const v2 = window.ActionVersioning.getVersion(action.id, compareVersionIds[1]);
+
+  if (!v1 || !v2) return;
+
+  const [oldV, newV] = v1.versionNumber < v2.versionNumber ? [v1, v2] : [v2, v1];
+
+  if (compareOldInfo) {
+    compareOldInfo.textContent = `v${oldV.versionNumber} · ${formatDate(oldV.createdAt)}`;
+  }
+  if (compareNewInfo) {
+    compareNewInfo.textContent = `v${newV.versionNumber} · ${formatDate(newV.createdAt)}`;
+  }
+
+  const diff = window.ActionVersioning.compareVersions(oldV, newV);
+  renderCompareContent(diff);
+
+  if (versionCompareModal) {
+    versionCompareModal.hidden = false;
+  }
+}
+
+function renderCompareContent(diff) {
+  if (!versionCompareContent || !diff) return;
+
+  let html = "";
+
+  html += renderCompareSection("动作名称", diff.name.changed ? "modified" : "unchanged", `
+    <div class="compare-row">
+      <div class="compare-cell ${diff.name.changed ? "old" : "same"}">${escapeHtml(diff.name.oldValue || "(空)")}</div>
+      <div class="compare-cell ${diff.name.changed ? "new" : "same"}">${escapeHtml(diff.name.newValue || "(空)")}</div>
+    </div>
+  `);
+
+  html += renderCompareSection("标签", diff.tags.changed ? "modified" : "unchanged", `
+    <div class="compare-row">
+      <div class="compare-cell ${diff.tags.changed ? "old" : "same"}">${escapeHtml(diff.tags.oldValue || "(空)")}</div>
+      <div class="compare-cell ${diff.tags.changed ? "new" : "same"}">${escapeHtml(diff.tags.newValue || "(空)")}</div>
+    </div>
+  `);
+
+  const frameStatus = diff.frames.added.length > 0 || diff.frames.removed.length > 0 || diff.frames.modified.length > 0
+    ? "modified"
+    : "unchanged";
+  const frameCount = diff.frames.added.length + diff.frames.removed.length + diff.frames.modified.length;
+
+  let framesHtml = "";
+  if (frameCount === 0) {
+    framesHtml = `<p class="compare-empty">无变化</p>`;
+  } else {
+    framesHtml = `<div class="compare-list">`;
+    diff.frames.added.forEach((f) => {
+      framesHtml += `
+        <div class="compare-list-item added">
+          <div class="compare-item-title">➕ ${escapeHtml(f.stage || "关键帧")} ${escapeHtml(f.time || "")}</div>
+          <div class="compare-item-desc">${escapeHtml(f.note || f.wrist || f.weight || "新关键帧")}</div>
+        </div>
+      `;
+    });
+    diff.frames.removed.forEach((f) => {
+      framesHtml += `
+        <div class="compare-list-item removed">
+          <div class="compare-item-title">➖ ${escapeHtml(f.stage || "关键帧")} ${escapeHtml(f.time || "")}</div>
+          <div class="compare-item-desc">${escapeHtml(f.note || f.wrist || f.weight || "已删除")}</div>
+        </div>
+      `;
+    });
+    diff.frames.modified.forEach((m) => {
+      framesHtml += `
+        <div class="compare-list-item modified">
+          <div class="compare-item-title">✏️ ${escapeHtml(m.old.stage || "关键帧")} ${escapeHtml(m.old.time || "")}</div>
+          <div class="compare-item-desc">内容已修改</div>
+        </div>
+      `;
+    });
+    framesHtml += `</div>`;
+  }
+
+  html += renderCompareSection("关键帧", frameStatus, framesHtml, `${diff.frames.added.length} 新增 · ${diff.frames.removed.length} 删除 · ${diff.frames.modified.length} 修改`);
+
+  const annStatus = diff.annotations.added.length > 0 || diff.annotations.removed.length > 0 || diff.annotations.modified.length > 0
+    ? "modified"
+    : "unchanged";
+
+  let annHtml = "";
+  if (diff.annotations.added.length + diff.annotations.removed.length + diff.annotations.modified.length === 0) {
+    annHtml = `<p class="compare-empty">无变化</p>`;
+  } else {
+    annHtml = `<div class="compare-list">`;
+    diff.annotations.added.forEach((a) => {
+      annHtml += `
+        <div class="compare-list-item added">
+          <div class="compare-item-title">➕ ${escapeHtml(a.bodyPart || "批注")} ${a.timestamp != null ? "(" + a.timestamp.toFixed(1) + "s)" : ""}</div>
+          <div class="compare-item-desc">${escapeHtml(a.note || a.direction || "新批注")}</div>
+        </div>
+      `;
+    });
+    diff.annotations.removed.forEach((a) => {
+      annHtml += `
+        <div class="compare-list-item removed">
+          <div class="compare-item-title">➖ ${escapeHtml(a.bodyPart || "批注")} ${a.timestamp != null ? "(" + a.timestamp.toFixed(1) + "s)" : ""}</div>
+          <div class="compare-item-desc">${escapeHtml(a.note || a.direction || "已删除")}</div>
+        </div>
+      `;
+    });
+    diff.annotations.modified.forEach((m) => {
+      annHtml += `
+        <div class="compare-list-item modified">
+          <div class="compare-item-title">✏️ ${escapeHtml(m.old.bodyPart || "批注")}</div>
+          <div class="compare-item-desc">内容已修改</div>
+        </div>
+      `;
+    });
+    annHtml += `</div>`;
+  }
+
+  html += renderCompareSection("媒体批注", annStatus, annHtml, `${diff.annotations.added.length} 新增 · ${diff.annotations.removed.length} 删除 · ${diff.annotations.modified.length} 修改`);
+
+  const mediaStatus = diff.media.changed ? "modified" : "unchanged";
+  const mediaHtml = `
+    <div class="compare-row">
+      <div class="compare-cell ${diff.media.changed ? "old" : "same"}">${escapeHtml((diff.media.oldValue && (diff.media.oldValue.name || diff.media.oldValue.id)) || "(无素材)")}</div>
+      <div class="compare-cell ${diff.media.changed ? "new" : "same"}">${escapeHtml((diff.media.newValue && (diff.media.newValue.name || diff.media.newValue.id)) || "(无素材)")}</div>
+    </div>
+  `;
+  html += renderCompareSection("素材引用", mediaStatus, mediaHtml);
+
+  versionCompareContent.innerHTML = html;
+}
+
+function renderCompareSection(title, status, content, extraBadgeText = "") {
+  const badgeText = status === "added" ? "新增" : status === "removed" ? "删除" : status === "modified" ? "已修改" : "无变化";
+  const extraBadge = extraBadgeText ? `<span class="diff-badge ${status}">${extraBadgeText}</span>` : "";
+  return `
+    <div class="compare-section">
+      <div class="compare-section-header">
+        ${title}
+        <span class="diff-badge ${status}">${badgeText}</span>
+        ${extraBadge}
+      </div>
+      <div class="compare-section-body">
+        ${content}
+      </div>
+    </div>
+  `;
+}
+
+async function restoreSelectedVersion() {
+  const action = activeAction();
+  if (!action || !selectedVersionId || !window.ActionVersioning) return;
+
+  const version = window.ActionVersioning.getVersion(action.id, selectedVersionId);
+  if (!version) return;
+
+  if (!confirm(`确定要恢复到 v${version.versionNumber} 版本吗？\n\n${version.changeDescription || ""}\n\n当前版本将被保存为历史版本。`)) {
+    return;
+  }
+
+  const success = window.ActionVersioning.restoreVersion(action.id, selectedVersionId);
+  if (success) {
+    showToast(`已恢复到 v${version.versionNumber} 版本`, "success");
+    closeVersionHistoryModal();
+    await MediaLibrary.syncUsedByReferences(state);
+    await renderAll();
+    if (window.KnowledgeSearch && typeof window.KnowledgeSearch.refreshIndex === "function") {
+      window.KnowledgeSearch.refreshIndex();
+    }
+    if (window.Choreography && typeof window.Choreography.detectActionChanges === "function") {
+      window.Choreography.detectActionChanges();
+    }
+  } else {
+    showToast("恢复失败", "error");
+  }
+}
+
 async function renderDetail() {
   const action = activeAction();
   if (!action) {
@@ -805,6 +1156,7 @@ async function renderDetail() {
     frameForm.style.display = "none";
     renderAnnotations();
     renderActionHistory();
+    renderVersionSummary();
     setAnnotationCreatingMode(false);
     return;
   }
@@ -911,6 +1263,7 @@ async function renderDetail() {
   `;
 
   renderActionHistory();
+  renderVersionSummary();
   if (window.ReviewScoring) {
     window.ReviewScoring.renderScoreSummary();
   }
@@ -1262,12 +1615,13 @@ async function updateActionFromModal() {
   if (!action) return;
 
   const oldName = action.name;
+  const oldTags = action.tags;
+  const oldMediaId = getActionMediaId(action);
   action.name = newName;
   action.tags = newTags;
   action.updatedAt = new Date().toISOString();
 
   if (pendingEditMedia !== null) {
-    const oldMediaId = getActionMediaId(action);
     if (pendingEditMedia === false) {
       setActionMediaRef(action, null);
       if (oldMediaId) {
@@ -1295,6 +1649,16 @@ async function updateActionFromModal() {
   }
 
   save();
+  if (window.ActionVersioning) {
+    const changeTypes = [];
+    if (oldName !== action.name) changeTypes.push("name");
+    if (oldTags !== action.tags) changeTypes.push("tags");
+    const newMediaId = getActionMediaId(action);
+    if (oldMediaId !== newMediaId) changeTypes.push("media");
+    if (changeTypes.length > 0) {
+      window.ActionVersioning.saveVersion(actionId, changeTypes, "", true);
+    }
+  }
   await MediaLibrary.syncUsedByReferences(state);
   closeActionEditModal();
   await renderAll();
@@ -1396,6 +1760,9 @@ async function duplicateAction(actionId) {
   state.activeId = newAction.id;
 
   save();
+  if (window.ActionVersioning) {
+    window.ActionVersioning.saveVersion(newAction.id, [], `复制自「${source.name}」`, true);
+  }
   await MediaLibrary.syncUsedByReferences(state);
   await renderAll();
 
@@ -1684,6 +2051,9 @@ actionForm.addEventListener("submit", async (event) => {
   if (mediaPreviewInner) mediaPreviewInner.innerHTML = "";
   actionForm.reset();
   save();
+  if (window.ActionVersioning) {
+    window.ActionVersioning.saveVersion(action.id, [], "初始版本", true);
+  }
   await MediaLibrary.syncUsedByReferences(state);
   await renderAll();
 });
@@ -1704,6 +2074,9 @@ frameForm.addEventListener("submit", (event) => {
   });
   frameForm.reset();
   save();
+  if (window.ActionVersioning) {
+    window.ActionVersioning.saveVersion(action.id, ["frames"], "添加关键帧");
+  }
   renderAll();
 });
 
@@ -1741,6 +2114,9 @@ timeline.addEventListener("click", (event) => {
   if (!id || !action) return;
   action.frames = action.frames.filter((frame) => frame.id !== id);
   save();
+  if (window.ActionVersioning) {
+    window.ActionVersioning.saveVersion(action.id, ["frames"], "删除关键帧");
+  }
   renderAll();
 });
 
@@ -1805,6 +2181,9 @@ window.addEventListener("beforeunload", () => {
   stopTimer();
   stopMetronome();
   stopDrag();
+  if (window.ActionVersioning && typeof window.ActionVersioning.flushPendingSnapshots === "function") {
+    window.ActionVersioning.flushPendingSnapshots();
+  }
 });
 
 const actionEditModal = document.querySelector("#actionEditModal");
@@ -2630,6 +3009,57 @@ const MirrorTraining = (function () {
 
 window.MirrorTraining = MirrorTraining;
 
+function initVersionHistoryEvents() {
+  if (openVersionHistoryBtn) {
+    openVersionHistoryBtn.addEventListener("click", openVersionHistoryModal);
+  }
+
+  if (versionHistoryModal) {
+    versionHistoryModal.addEventListener("click", (e) => {
+      if (e.target.hasAttribute("data-close-version-history") || e.target === versionHistoryModal) {
+        closeVersionHistoryModal();
+      }
+    });
+  }
+
+  if (versionList) {
+    versionList.addEventListener("click", (e) => {
+      const versionItem = e.target.closest("[data-action='select-version']");
+      if (versionItem) {
+        const versionId = versionItem.dataset.versionId;
+        if (versionId) {
+          selectVersion(versionId);
+        }
+      }
+    });
+  }
+
+  if (restoreVersionBtn) {
+    restoreVersionBtn.addEventListener("click", restoreSelectedVersion);
+  }
+
+  if (versionCompareToggle) {
+    versionCompareToggle.addEventListener("change", (e) => {
+      compareMode = e.target.checked;
+      compareVersionIds = [];
+      selectedVersionId = null;
+      if (versionCompareHint) {
+        versionCompareHint.hidden = !compareMode;
+      }
+      renderVersionList();
+      updateRestoreButtonState();
+    });
+  }
+
+  if (versionCompareModal) {
+    versionCompareModal.addEventListener("click", (e) => {
+      if (e.target.hasAttribute("data-close-version-compare") || e.target === versionCompareModal) {
+        versionCompareModal.hidden = true;
+      }
+    });
+  }
+}
+
 const _originalRenderAll = renderAll;
 renderAll = async function () {
   await _originalRenderAll();
@@ -2696,6 +3126,11 @@ renderAll = async function () {
 
   if (window.PracticeLoopDashboard) {
     window.PracticeLoopDashboard.init();
+  }
+
+  if (window.ActionVersioning) {
+    window.ActionVersioning.init();
+    initVersionHistoryEvents();
   }
 
   await renderAll();
